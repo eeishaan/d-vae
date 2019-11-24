@@ -47,27 +47,47 @@ class NASDataset(Dataset):
         node_types = 6 + 1  # 1 for EOS token
         seq_len = len(x) + 1  # 1 for EOS token
 
-        node_encoding = np.zeros(seq_len, node_types)
+        # store 1-hot encoding for nodes in seq
+        node_encoding = np.zeros((seq_len, node_types))
+
+        # capture input edges
         dep_dict = {}
+
+        # capture edges with successor except eos node
+        is_successor = np.zeros((seq_len - 1))
+
+        # iterate over network
         for index, node in enumerate(x):
             node_type = node[0]
             node_encoding[index, node_type] = 1
+
+            # make note of input edges
             for dep, val in enumerate(node[1:]):
                 if val == 0:
                     continue
+
                 if dep not in dep_dict:
-                    dep_dict[dep] = set()
-                dep_dict[dep].add(index)
+                    dep_dict[index] = set()
+                dep_dict[index].add(dep)
+
+                # make note of output edges
+                is_successor[dep] = 1
+
+        # store encoding for last node
         node_encoding[-1, -1] = 1
+
+        # store iteration order
         top_sort = list(toposort(dep_dict))
-        end_nodes = list(top_sort[-1])
-        eos_graph_row = np.zeros(seq_len)
-        eos_graph_row[end_nodes] = 1
-        eos_graph_row[0] = node_types
         node_order = [y for x in top_sort for y in sorted(x)]
         node_order.append(seq_len - 1)  # add EOS node at the end
 
+        no_successor_nodes = np.argwhere(is_successor == 0)
+        eos_graph_row = np.zeros((seq_len))
+        eos_graph_row[0] = node_types
+        # shift index by 1 to account for node type
+        eos_graph_row[no_successor_nodes + 1] = 1
         new_seq = x.append(eos_graph_row)
+
         return new_seq, node_encoding, node_order
 
     def __getitem__(self, index):
