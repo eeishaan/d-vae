@@ -56,7 +56,7 @@ class NASDataset(Dataset):
         is_successor = np.zeros((seq_len - 1))
 
         # dependency mask for easy computation
-        dep_graph = np.zeros((seq_len, node_types - 1))
+        dep_graph = np.zeros((seq_len, seq_len))
 
         # iterate over network
         for index, node in enumerate(x):
@@ -85,14 +85,11 @@ class NASDataset(Dataset):
         node_order.append(seq_len - 1)  # add EOS node at the end
 
         no_successor_nodes = np.argwhere(is_successor == 0)
-        eos_graph_row = np.zeros((seq_len - 1), dtype=int)
-        # shift index by 1 to account for node type
+        eos_graph_row = np.zeros((seq_len), dtype=int)
         eos_graph_row[no_successor_nodes] = 1
         dep_graph[-1, :] = eos_graph_row
 
-        # convert dep_graph to boolean mask
         dep_graph = torch.from_numpy(dep_graph)
-        dep_graph = (dep_graph == 1)
 
         return dep_graph, torch.from_numpy(node_encoding), torch.as_tensor(node_order, dtype=torch.int)
 
