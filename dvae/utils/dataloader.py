@@ -59,16 +59,22 @@ class NASDataset(Dataset):
                     dep_dict[dep] = set()
                 dep_dict[dep].add(index)
         node_encoding[-1, -1] = 1
-        node_order = [y for x in toposort(dep_dict) for y in sorted(list(x))]
+        top_sort = list(toposort(dep_dict))
+        end_nodes = list(top_sort[-1])
+        eos_graph_row = np.zeros(seq_len)
+        eos_graph_row[end_nodes] = 1
+        eos_graph_row[0] = node_types
+        node_order = [y for x in top_sort for y in sorted(x)]
         node_order.append(seq_len - 1)  # add EOS node at the end
 
-        return node_encoding, node_order
+        new_seq = x.append(eos_graph_row)
+        return new_seq, node_encoding, node_order
 
     def __getitem__(self, index):
         item = self.samples.iloc[index]
 
         seq = NASDataset._add_delim(item[0])
-        node_encoding, node_order = NASDataset._process_seq(seq)
+        seq, node_encoding, node_order = NASDataset._process_seq(seq)
         acc = float(item[1])
 
         return {
