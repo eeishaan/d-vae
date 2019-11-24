@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader, Dataset
 
 class NASDataset(Dataset):
     def __init__(self, file_path, split='train'):
-        super(NASDataset, self)
+        super(NASDataset, self).__init__()
         self.file_path = file_path
 
         # load the file
