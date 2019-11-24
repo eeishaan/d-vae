@@ -38,7 +38,6 @@ class NASDataset(Dataset):
 
     @classmethod
     def _add_delim(cls, x):
-        print(type(x), x)
         correct_json = x + ']]'
         return json.loads(correct_json)
 
@@ -48,13 +47,16 @@ class NASDataset(Dataset):
         seq_len = len(x) + 1  # 1 for EOS token
 
         # store 1-hot encoding for nodes in seq
-        node_encoding = np.zeros((seq_len, node_types))
+        node_encoding = np.zeros((seq_len, node_types), dtype=int)
 
         # capture input edges
-        dep_dict = {}
+        dep_dict = {node_idx: set() for node_idx in range(seq_len-1)}
 
         # capture edges with successor except eos node
         is_successor = np.zeros((seq_len - 1))
+
+        # dependency mask for easy computation
+        dep_graph = np.zeros((seq_len, node_types - 1))
 
         # iterate over network
         for index, node in enumerate(x):
@@ -66,29 +68,33 @@ class NASDataset(Dataset):
                 if val == 0:
                     continue
 
-                if dep not in dep_dict:
-                    dep_dict[index] = set()
                 dep_dict[index].add(dep)
 
                 # make note of output edges
                 is_successor[dep] = 1
 
+                # update the dep graph
+                dep_graph[index, dep] = 1
+
         # store encoding for last node
         node_encoding[-1, -1] = 1
 
-        # store iteration order
+        # compute iteration order
         top_sort = list(toposort(dep_dict))
         node_order = [y for x in top_sort for y in sorted(x)]
         node_order.append(seq_len - 1)  # add EOS node at the end
 
         no_successor_nodes = np.argwhere(is_successor == 0)
-        eos_graph_row = np.zeros((seq_len))
-        eos_graph_row[0] = node_types
+        eos_graph_row = np.zeros((seq_len - 1), dtype=int)
         # shift index by 1 to account for node type
-        eos_graph_row[no_successor_nodes + 1] = 1
-        new_seq = x.append(eos_graph_row)
+        eos_graph_row[no_successor_nodes] = 1
+        dep_graph[-1, :] = eos_graph_row
 
-        return new_seq, node_encoding, node_order
+        # convert dep_graph to boolean mask
+        dep_graph = torch.from_numpy(dep_graph)
+        dep_graph = (dep_graph == 1)
+
+        return dep_graph, torch.from_numpy(node_encoding), torch.as_tensor(node_order, dtype=torch.int)
 
     def __getitem__(self, index):
         item = self.samples.iloc[index]
