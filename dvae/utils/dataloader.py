@@ -83,6 +83,7 @@ class NASDataset(Dataset):
         top_sort = list(toposort(dep_dict))
         node_order = [y for x in top_sort for y in sorted(x)]
         node_order.append(seq_len - 1)  # add EOS node at the end
+        node_order = torch.as_tensor(node_order, dtype=torch.long)
 
         no_successor_nodes = np.argwhere(is_successor == 0)
         eos_graph_row = np.zeros((seq_len), dtype=int)
@@ -90,20 +91,23 @@ class NASDataset(Dataset):
         dep_graph[-1, :] = eos_graph_row
 
         dep_graph = torch.from_numpy(dep_graph)
+        node_encoding = torch.from_numpy(node_encoding)
 
-        return dep_graph, torch.from_numpy(node_encoding), torch.as_tensor(node_order, dtype=torch.int)
+        # reorder as per topological order
+        dep_graph = torch.index_select(dep_graph, 0, node_order)
+        node_encoding = torch.index_select(node_encoding, 0, node_order)
+        return dep_graph, node_encoding
 
     def __getitem__(self, index):
         item = self.samples.iloc[index]
 
         seq = NASDataset._add_delim(item[0])
-        seq, node_encoding, node_order = NASDataset._process_seq(seq)
+        seq, node_encoding = NASDataset._process_seq(seq)
         acc = float(item[1])
 
         return {
             'graph': seq,
             'node_encoding': node_encoding,
-            'node_order': node_order,
             'acc': acc
         }
 
