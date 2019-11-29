@@ -147,6 +147,9 @@ class Dvae(pl.LightningModule):
             batch_size, dataset_file)
         self.encoder = Encoder()
         self.decoder = Decoder()
+        self.bce_loss = torch.nn.BCEWithLogitsLoss()
+        self.cross_entropy_loss = torch.nn.CrossEntropyLoss()
+        self.num_classes = 8
 
     def reparamterize(self, mu, logvar):
         std = torch.exp(0.5 * logvar)
@@ -161,10 +164,20 @@ class Dvae(pl.LightningModule):
 
     def training_step(self, batch, batch_nb):
         # REQUIRED
-        x, y = batch
-        y_hat = self.forward(x)
-        loss = F.cross_entropy(y_hat, y)
-        tensorboard_logs = {'train_loss': loss}
+        dep_graph, node_encoding = batch
+        (gen_dep_graph, gen_node_encoding), mu, logvar = self.forward(batch)
+        edge_loss = self.bce_loss(gen_dep_graph, dep_graph)
+        vertex_loss = self.cross_entropy_loss(
+            gen_node_encoding.view(-1, self.num_classes),
+            node_encoding.view(-1, self.num_classes))
+        kl_loss = -0.5 * torch.mean(1 + logvar - mu**2 - logvar.exp())
+        loss = edge_loss + vertex_loss + 0.005 * kl_loss
+
+        tensorboard_logs = {
+            'edge_loss': edge_loss,
+            'vertex_loss': vertex_loss,
+            'kl_loss': kl_loss,
+            'train_loss': loss}
         return {'loss': loss, 'log': tensorboard_logs}
 
     def validation_step(self, batch, batch_nb):
