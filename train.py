@@ -12,6 +12,6 @@ trainer = Trainer(
     default_save_path=MODEL_DIR,
     show_progress_bar=True,
     early_stop_callback=None,
-    max_nb_epochs=100,
+    max_nb_epochs=300,
     gpus=1)
 trainer.fit(model)
