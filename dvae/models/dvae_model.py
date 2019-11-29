@@ -5,8 +5,6 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
-from torchvision import transforms
-from torchvision.datasets import MNIST
 
 from dvae.utils.dataloader import get_dataloaders
 
