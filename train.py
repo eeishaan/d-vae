@@ -13,6 +13,5 @@ trainer = Trainer(
     show_progress_bar=True,
     early_stop_callback=None,
     max_nb_epochs=100,
-    gpus=1,
-    distributed_backend='ddp')
+    gpus=1)
 trainer.fit(model)
