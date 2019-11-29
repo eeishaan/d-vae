@@ -180,17 +180,31 @@ class Dvae(pl.LightningModule):
             'train_loss': loss}
         return {'loss': loss, 'log': tensorboard_logs}
 
-    # def validation_step(self, batch, batch_nb):
-    #     # OPTIONAL
-    #     x, y = batch
-    #     y_hat = self.forward(x)
-    #     return {'val_loss': F.cross_entropy(y_hat, y)}
+    def validation_step(self, batch, batch_nb):
+        # OPTIONAL
+        dep_graph, node_encoding = batch['graph'], batch['node_encoding']
+        (gen_dep_graph, gen_node_encoding), mu, logvar = self.forward(batch)
+        edge_loss = self.bce_loss(gen_dep_graph, dep_graph, reduction='sum')
+        vertex_loss = self.cross_entropy_loss(
+            gen_node_encoding.view(-1, self.num_classes),
+            torch.argmax(
+                node_encoding.view(-1, self.num_classes), dim=1), reduction='sum')
+        kl_loss = -0.5 * torch.sum(1 + logvar - mu**2 - logvar.exp())
+        loss = edge_loss + vertex_loss + 0.005 * kl_loss
+        return {
+            'val_edge_loss': edge_loss,
+            'val_vertex_loss': vertex_loss,
+            'val_kl_loss': kl_loss,
+            'val_loss': loss}
 
-    # def validation_end(self, outputs):
-    #     # OPTIONAL
-    #     avg_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
-    #     tensorboard_logs = {'val_loss': avg_loss}
-    #     return {'avg_val_loss': avg_loss, 'log': tensorboard_logs}
+    def validation_end(self, outputs):
+        # OPTIONAL
+        loss_keys = ['val_loss', 'val_edge_loss',
+                     'val_vertex_loss', 'val_kl_loss']
+        metrics = {
+            key: torch.stack([x[key] for x in outputs]).mean() for key in loss_keys
+        }
+        return {'avg_val_loss': metrics['val_loss'], 'log': metrics}
 
     def configure_optimizers(self):
         # REQUIRED
