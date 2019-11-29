@@ -61,41 +61,45 @@ class NASDataset(Dataset):
 
         # iterate over network
         for index, node in enumerate(x):
-            node_type = node[0]
+            for dep, val in enumerate(node[1:]):
+                if val == 0:
+                    continue
+                # make note of input edges
+                dep_dict[index + 1].add(dep + 1)
 
+        top_sort = list(toposort(dep_dict))
+        correct_node_order = [y for x in top_sort for y in sorted(x)]
+        old_to_new_index = {old: new + 1 for new,
+                            old in enumerate(correct_node_order)}
+        for old_index, new_index in old_to_new_index.items():
+            node = x[old_index - 1]
+
+            node_type = node[0]
             # shift index by 1 as SOS node occupies 0th index
-            node_encoding[index + 1, node_type] = 1
+            node_encoding[new_index, node_type] = 1
 
             # make note of input edges
             for dep, val in enumerate(node[1:]):
                 if val == 0:
                     continue
-
-                dep_dict[index + 1].add(dep + 1)
+                # shift by 1 to account for SOS token
+                new_dep_index = old_to_new_index[dep + 1]
 
                 # make note of output edges
-                is_successor[dep + 1] = 1
+                is_successor[new_dep_index] = 1
 
                 # update the dep graph
-                # shift index by 1 as 0th index is occupied by SOS node
-                dep_graph[index + 1, dep + 1] = 1
+                dep_graph[new_index, new_dep_index] = 1
 
         # store encoding for first node
         node_encoding[0, -2] = 1
         # store encoding for last node
         node_encoding[-1, -1] = 1
 
-        # compute iteration order
-        top_sort = list(toposort(dep_dict))
-        node_order = [0]  # add SOS node at the beginning
-        node_order.extend(y for x in top_sort for y in sorted(x))
-        node_order.append(seq_len - 1)  # add EOS node at the end
-        node_order = torch.as_tensor(node_order, dtype=torch.long)
-
         # tie all root nodes to SOS node
         root_nodes = list(top_sort[0])
         for node in root_nodes:
-            dep_graph[node, 0] = 1
+            dep_graph[old_to_new_index[node], 0] = 1
 
         # tie all end nodes to EOS node
         no_successor_nodes = np.argwhere(is_successor == 0)
@@ -106,9 +110,6 @@ class NASDataset(Dataset):
         dep_graph = torch.from_numpy(dep_graph)
         node_encoding = torch.from_numpy(node_encoding)
 
-        # reorder as per topological order
-        dep_graph = torch.index_select(dep_graph, 0, node_order)
-        node_encoding = torch.index_select(node_encoding, 0, node_order)
         return dep_graph, node_encoding
 
     def __getitem__(self, index):
