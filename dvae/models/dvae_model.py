@@ -73,7 +73,6 @@ class Decoder(nn.Module):
             nn.Linear(2*hidden_state_size, 4*hidden_state_size),
             nn.ReLU(),
             nn.Linear(4*hidden_state_size, 1),
-            nn.Sigmoid()
         )
         self.gating_network = nn.Sequential(
             nn.Linear(hidden_state_size, hidden_state_size),
@@ -112,8 +111,6 @@ class Decoder(nn.Module):
             for v_j in range(index-1, -1, -1):
                 hidden_j = node_hidden_state[:, v_j]
                 is_edge = self.add_edge(torch.cat([h_v, hidden_j], dim=0))
-                is_edge[is_edge < 0.5] = 0
-                is_edge[is_edge >= 0.5] = 1
                 gen_dep_graph[:, index, v_j] = is_edge
 
                 # TODO: add modification for NAS and bayesian task here
