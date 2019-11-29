@@ -220,7 +220,7 @@ class Dvae(pl.LightningModule):
     @pl.data_loader
     def val_dataloader(self):
         # OPTIONAL
-        return self.val_loader
+        return self.val_loader[0]
 
     @pl.data_loader
     def test_dataloader(self):
