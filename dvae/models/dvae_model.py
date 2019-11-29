@@ -101,22 +101,23 @@ class Decoder(nn.Module):
             # compute initial hidden states
             if index == 0:
                 h_in = graph_state
-                h_v = self.gru(node_encoding[:, index], h_in)
+                hv = self.gru(node_encoding[:, index], h_in)
             else:
-                h_v = self.gru(node_encoding[:, index])
+                hv = self.gru(node_encoding[:, index])
 
             # sample edges
             for v_j in range(index-1, -1, -1):
                 hidden_j = node_hidden_state[:, v_j]
-                is_edge = self.add_edge(torch.cat([h_v, hidden_j], dim=0))
-                gen_dep_graph[:, index, v_j] = is_edge
+                is_edge = self.add_edge(torch.cat([hv, hidden_j], dim=1))
+                gen_dep_graph[:, index, v_j] = is_edge.view(-1)
 
                 # TODO: add modification for NAS and bayesian task here
                 # compute h_in
                 ancestors = dep_graph[:, index]
-                # warning verify if happening in-place
+                ancestors_mask = torch.ones_like(ancestors)
                 # zero out all ancestors before v_j
-                ancestors[:, :v_j] = 0
+                ancestors_mask[:, :v_j] = 0
+                ancestors = ancestors * ancestors_mask
                 ancestor_hidden_state = node_hidden_state * \
                     ancestors.view(batch_size, -1, 1)
                 ancestor_hidden_state = ancestor_hidden_state.view(
@@ -162,12 +163,13 @@ class Dvae(pl.LightningModule):
 
     def training_step(self, batch, batch_nb):
         # REQUIRED
-        dep_graph, node_encoding = batch
+        dep_graph, node_encoding = batch['graph'], batch['node_encoding']
         (gen_dep_graph, gen_node_encoding), mu, logvar = self.forward(batch)
         edge_loss = self.bce_loss(gen_dep_graph, dep_graph)
         vertex_loss = self.cross_entropy_loss(
             gen_node_encoding.view(-1, self.num_classes),
-            node_encoding.view(-1, self.num_classes))
+            torch.argmax(
+                node_encoding.view(-1, self.num_classes), dim=1))
         kl_loss = -0.5 * torch.mean(1 + logvar - mu**2 - logvar.exp())
         loss = edge_loss + vertex_loss + 0.005 * kl_loss
 
