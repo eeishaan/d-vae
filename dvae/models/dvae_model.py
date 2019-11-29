@@ -12,7 +12,7 @@ from dvae.utils.dataloader import get_dataloaders
 
 
 class Encoder(nn.Module):
-    def __init__(self, num_classes=8, hidden_state_size=501):
+    def __init__(self, num_classes=8, hidden_state_size=501, latent_space_dim=56):
         super(Encoder, self).__init__()
         self.hidden_state_size = hidden_state_size
         self.gating_network = nn.Sequential(
@@ -22,8 +22,8 @@ class Encoder(nn.Module):
         self.mapping_network = nn.Linear(hidden_state_size, hidden_state_size)
         self.gru = nn.GRUCell(num_classes, hidden_state_size)
 
-        self.lin11 = nn.Linear(hidden_state_size, hidden_state_size)
-        self.lin12 = nn.Linear(hidden_state_size, hidden_state_size)
+        self.lin11 = nn.Linear(hidden_state_size, latent_space_dim)
+        self.lin12 = nn.Linear(hidden_state_size, latent_space_dim)
 
     def forward(self, X):
         dep_graph, node_encoding = X['graph'], X['node_encoding']
@@ -58,17 +58,21 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, num_classes=8, hidden_state_size=501):
+    def __init__(self, num_classes=8, hidden_state_size=501, latent_space_dim=56):
         super(Decoder, self).__init__()
         self.hidden_state_size = hidden_state_size
         self.num_classes = num_classes
-        self.lin1 = nn.Linear(hidden_state_size, hidden_state_size)
+        self.lin1 = nn.Linear(latent_space_dim, hidden_state_size)
         self.add_vertex = nn.Sequential(
-            nn.Linear(hidden_state_size, num_classes),
+            nn.Linear(hidden_state_size, 2*hidden_state_size),
+            nn.ReLU(),
+            nn.Linear(2*hidden_state_size, num_classes),
             nn.Softmax()
         )
         self.add_edge = nn.Sequential(
-            nn.Linear(2*hidden_state_size, 1),
+            nn.Linear(2*hidden_state_size, 4*hidden_state_size),
+            nn.ReLU(),
+            nn.Linear(4*hidden_state_size, 1),
             nn.Sigmoid()
         )
         self.gating_network = nn.Sequential(
