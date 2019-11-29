@@ -194,9 +194,9 @@ class Dvae(pl.LightningModule):
 
     def configure_optimizers(self):
         # REQUIRED
-        # can return multiple optimizers and learning_rate schedulers
-        # (LBFGS it is automatically supported, no need for closure function)
-        return torch.optim.Adam(self.parameters(), lr=0.02)
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-4)
+        lr_schedule = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer)
+        return [optimizer], [lr_schedule]
 
     @pl.data_loader
     def train_dataloader(self):
