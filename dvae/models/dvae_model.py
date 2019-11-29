@@ -12,7 +12,7 @@ from dvae.utils.dataloader import get_dataloaders
 
 
 class Encoder(nn.Module):
-    def __init__(self, num_classes=7, hidden_state_size=501):
+    def __init__(self, num_classes=8, hidden_state_size=501):
         super(Encoder, self).__init__()
         self.hidden_state_size = hidden_state_size
         self.gating_network = nn.Sequential(
@@ -58,7 +58,7 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, num_classes=7, hidden_state_size=501):
+    def __init__(self, num_classes=8, hidden_state_size=501):
         super(Decoder, self).__init__()
         self.hidden_state_size = hidden_state_size
         self.num_classes = num_classes
@@ -100,9 +100,9 @@ class Decoder(nn.Module):
             # compute initial hidden states
             if index == 0:
                 h_in = graph_state
+                h_v = self.gru(node_encoding[:, index], h_in)
             else:
-                pass
-                # TODO: Compute initial h_v
+                h_v = self.gru(node_encoding[:, index])
 
             # sample edges
             for v_j in range(index-1, -1, -1):
