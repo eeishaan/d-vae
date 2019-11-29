@@ -43,17 +43,18 @@ class NASDataset(Dataset):
 
     @classmethod
     def _process_seq(cls, x):
-        node_types = 6 + 1  # 1 for EOS token
-        seq_len = len(x) + 1  # 1 for EOS token
+        node_types = 6 + 2  # 1 for EOS token, 1 for SOS token
+        seq_len = len(x) + 2  # 1 for EOS token, 1 for SOS token
 
         # store 1-hot encoding for nodes in seq
         node_encoding = np.zeros((seq_len, node_types), dtype=int)
 
         # capture input edges
-        dep_dict = {node_idx: set() for node_idx in range(seq_len-1)}
+        dep_dict = {node_idx: set() for node_idx in range(1, seq_len-1)}
 
-        # capture edges with successor except eos node
+        # capture edges with successor except eos and sos node
         is_successor = np.zeros((seq_len - 1))
+        is_successor[0] = 1
 
         # dependency mask for easy computation
         dep_graph = np.zeros((seq_len, seq_len))
@@ -61,30 +62,42 @@ class NASDataset(Dataset):
         # iterate over network
         for index, node in enumerate(x):
             node_type = node[0]
-            node_encoding[index, node_type] = 1
+
+            # shift index by 1 as SOS node occupies 0th index
+            node_encoding[index + 1, node_type] = 1
 
             # make note of input edges
             for dep, val in enumerate(node[1:]):
                 if val == 0:
                     continue
 
-                dep_dict[index].add(dep)
+                dep_dict[index + 1].add(dep + 1)
 
                 # make note of output edges
-                is_successor[dep] = 1
+                is_successor[dep + 1] = 1
 
                 # update the dep graph
-                dep_graph[index, dep] = 1
+                # shift index by 1 as 0th index is occupied by SOS node
+                dep_graph[index + 1, dep + 1] = 1
 
+        # store encoding for first node
+        node_encoding[0, -2] = 1
         # store encoding for last node
         node_encoding[-1, -1] = 1
 
         # compute iteration order
         top_sort = list(toposort(dep_dict))
-        node_order = [y for x in top_sort for y in sorted(x)]
+        node_order = [0]  # add SOS node at the beginning
+        node_order.extend(y for x in top_sort for y in sorted(x))
         node_order.append(seq_len - 1)  # add EOS node at the end
         node_order = torch.as_tensor(node_order, dtype=torch.long)
 
+        # tie all root nodes to SOS node
+        root_nodes = list(top_sort[0])
+        for node in root_nodes:
+            dep_graph[node, 0] = 1
+
+        # tie all end nodes to EOS node
         no_successor_nodes = np.argwhere(is_successor == 0)
         eos_graph_row = np.zeros((seq_len), dtype=int)
         eos_graph_row[no_successor_nodes] = 1
