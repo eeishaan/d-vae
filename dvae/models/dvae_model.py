@@ -165,12 +165,12 @@ class Dvae(pl.LightningModule):
         # REQUIRED
         dep_graph, node_encoding = batch['graph'], batch['node_encoding']
         (gen_dep_graph, gen_node_encoding), mu, logvar = self.forward(batch)
-        edge_loss = self.bce_loss(gen_dep_graph, dep_graph)
+        edge_loss = self.bce_loss(gen_dep_graph, dep_graph, reduction='sum')
         vertex_loss = self.cross_entropy_loss(
             gen_node_encoding.view(-1, self.num_classes),
             torch.argmax(
-                node_encoding.view(-1, self.num_classes), dim=1))
-        kl_loss = -0.5 * torch.mean(1 + logvar - mu**2 - logvar.exp())
+                node_encoding.view(-1, self.num_classes), dim=1), reduction='sum')
+        kl_loss = -0.5 * torch.sum(1 + logvar - mu**2 - logvar.exp())
         loss = edge_loss + vertex_loss + 0.005 * kl_loss
 
         tensorboard_logs = {
