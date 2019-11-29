@@ -107,8 +107,8 @@ class NASDataset(Dataset):
         eos_graph_row[no_successor_nodes] = 1
         dep_graph[-1, :] = eos_graph_row
 
-        dep_graph = torch.from_numpy(dep_graph)
-        node_encoding = torch.from_numpy(node_encoding)
+        dep_graph = torch.from_numpy(dep_graph).float()
+        node_encoding = torch.from_numpy(node_encoding).float()
 
         return dep_graph, node_encoding
 
