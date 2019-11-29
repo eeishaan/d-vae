@@ -180,17 +180,17 @@ class Dvae(pl.LightningModule):
             'train_loss': loss}
         return {'loss': loss, 'log': tensorboard_logs}
 
-    def validation_step(self, batch, batch_nb):
-        # OPTIONAL
-        x, y = batch
-        y_hat = self.forward(x)
-        return {'val_loss': F.cross_entropy(y_hat, y)}
+    # def validation_step(self, batch, batch_nb):
+    #     # OPTIONAL
+    #     x, y = batch
+    #     y_hat = self.forward(x)
+    #     return {'val_loss': F.cross_entropy(y_hat, y)}
 
-    def validation_end(self, outputs):
-        # OPTIONAL
-        avg_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
-        tensorboard_logs = {'val_loss': avg_loss}
-        return {'avg_val_loss': avg_loss, 'log': tensorboard_logs}
+    # def validation_end(self, outputs):
+    #     # OPTIONAL
+    #     avg_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
+    #     tensorboard_logs = {'val_loss': avg_loss}
+    #     return {'avg_val_loss': avg_loss, 'log': tensorboard_logs}
 
     def configure_optimizers(self):
         # REQUIRED
