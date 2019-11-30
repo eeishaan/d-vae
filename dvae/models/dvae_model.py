@@ -69,7 +69,6 @@ class Decoder(nn.Module):
             nn.Linear(hidden_state_size, 2*hidden_state_size),
             nn.ReLU(),
             nn.Linear(2*hidden_state_size, num_classes),
-            nn.Softmax()
         )
         self.add_edge = nn.Sequential(
             nn.Linear(2*hidden_state_size, 4*hidden_state_size),
