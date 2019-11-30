@@ -146,8 +146,8 @@ class Dvae(pl.LightningModule):
             batch_size, dataset_file)
         self.encoder = Encoder()
         self.decoder = Decoder()
-        self.bce_loss = torch.nn.BCEWithLogitsLoss()
-        self.cross_entropy_loss = torch.nn.CrossEntropyLoss()
+        self.bce_loss = torch.nn.BCEWithLogitsLoss(reduction='sum')
+        self.cross_entropy_loss = torch.nn.CrossEntropyLoss(reduction='sum')
         self.num_classes = 8
 
     def reparamterize(self, mu, logvar):
@@ -165,11 +165,11 @@ class Dvae(pl.LightningModule):
         # REQUIRED
         dep_graph, node_encoding = batch['graph'], batch['node_encoding']
         (gen_dep_graph, gen_node_encoding), mu, logvar = self.forward(batch)
-        edge_loss = self.bce_loss(gen_dep_graph, dep_graph, reduction='sum')
+        edge_loss = self.bce_loss(gen_dep_graph, dep_graph)
         vertex_loss = self.cross_entropy_loss(
             gen_node_encoding.view(-1, self.num_classes),
             torch.argmax(
-                node_encoding.view(-1, self.num_classes), dim=1), reduction='sum')
+                node_encoding.view(-1, self.num_classes), dim=1))
         kl_loss = -0.5 * torch.sum(1 + logvar - mu**2 - logvar.exp())
         loss = edge_loss + vertex_loss + 0.005 * kl_loss
 
@@ -184,11 +184,11 @@ class Dvae(pl.LightningModule):
         # OPTIONAL
         dep_graph, node_encoding = batch['graph'], batch['node_encoding']
         (gen_dep_graph, gen_node_encoding), mu, logvar = self.forward(batch)
-        edge_loss = self.bce_loss(gen_dep_graph, dep_graph, reduction='sum')
+        edge_loss = self.bce_loss(gen_dep_graph, dep_graph,)
         vertex_loss = self.cross_entropy_loss(
             gen_node_encoding.view(-1, self.num_classes),
             torch.argmax(
-                node_encoding.view(-1, self.num_classes), dim=1), reduction='sum')
+                node_encoding.view(-1, self.num_classes), dim=1))
         kl_loss = -0.5 * torch.sum(1 + logvar - mu**2 - logvar.exp())
         loss = edge_loss + vertex_loss + 0.005 * kl_loss
         return {
