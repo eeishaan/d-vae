@@ -13,8 +13,8 @@ parser.add_argument('--model', type=str, required=True)
 args = parser.parse_args()
 
 model = Dvae.load_from_checkpoint(args.model)
-device = torch.device('cuda:0')
-# send to GPU
+device = torch.device(
+    'cuda:0') if torch.cuda.is_available() else torch.device('cpu')
 model.to(device)
 
 # predict
