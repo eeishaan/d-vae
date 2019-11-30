@@ -36,7 +36,7 @@ class Encoder(nn.Module):
             # compute h_in
             ancestors = dep_graph[:, index]
             ancestor_hidden_state = node_hidden_state * \
-                ancestors.view(batch_size, -1, 1)
+                ancestors.unsqueeze(-1)
             ancestor_hidden_state = ancestor_hidden_state.view(
                 -1, self.hidden_state_size)
             h_in = self.gating_network(ancestor_hidden_state) * \
@@ -124,7 +124,7 @@ class Decoder(nn.Module):
                 ancestors_mask[:, :v_j] = 0
                 ancestors = ancestors * ancestors_mask
                 ancestor_hidden_state = node_hidden_state * \
-                    ancestors.view(batch_size, -1, 1)
+                    ancestors.unsqueeze(-1)
                 ancestor_hidden_state = ancestor_hidden_state.view(
                     -1, self.hidden_state_size)
                 h_in = self.gating_network(ancestor_hidden_state) * \
@@ -151,7 +151,8 @@ class Decoder(nn.Module):
 
         index = 0
         while True:
-
+            if index == 8:
+                break
             # sample node type
             new_node_type = F.softmax(
                 self.add_vertex(graph_state), dim=1)
@@ -159,7 +160,7 @@ class Decoder(nn.Module):
             gen_nodes.append(new_node_type)
 
             new_node_encoding = F.one_hot(
-                new_node_type, num_classes=self.num_classes)
+                new_node_type, num_classes=self.num_classes).float()
 
             # compute initial hidden states
             if index == 0:
@@ -169,7 +170,7 @@ class Decoder(nn.Module):
                 hv = self.gru(new_node_encoding)
 
             possible_edges = torch.zeros(
-                batch_size, max(0, index), dtype=torch.int)
+                batch_size, max(0, index), dtype=torch.float)
             # sample edges
             for v_j in range(index-1, -1, -1):
                 hidden_j = node_hidden_state[v_j]
@@ -182,8 +183,8 @@ class Decoder(nn.Module):
                 # TODO: add modification for NAS and bayesian task here
                 # compute h_in
 
-                ancestor_hidden_state = possible_edges.view(batch_size, index, 1) * torch.stack(
-                    node_hidden_state).view(batch_size, index, self.hidden_state_size)
+                ancestor_hidden_state = possible_edges.unsqueeze(-1) * torch.stack(
+                    node_hidden_state).permute(1, 0, 2)
                 ancestor_hidden_state = ancestor_hidden_state.view(
                     -1, self.hidden_state_size)
                 h_in = self.gating_network(ancestor_hidden_state) * \
@@ -205,7 +206,7 @@ class Decoder(nn.Module):
 
 class Dvae(pl.LightningModule):
 
-    def __init__(self, batch_size, dataset_file, mod=None):
+    def __init__(self, hparams):
         """
         batch_size: batch size 
         dataset_file: dataset file
@@ -213,13 +214,13 @@ class Dvae(pl.LightningModule):
         """
         super(Dvae, self).__init__()
         self.train_loader, self.val_loader, self.test_loader = get_dataloaders(
-            batch_size, dataset_file)
-        self.encoder = Encoder(mod=mod)
-        self.decoder = Decoder(mod=mod)
+            hparams.batch_size, hparams.dataset_file) if hparams.dataset_file else [None]*3
+        self.encoder = Encoder(mod=hparams.mod)
+        self.decoder = Decoder(mod=hparams.mod)
         self.bce_loss = torch.nn.BCEWithLogitsLoss(reduction='sum')
         self.cross_entropy_loss = torch.nn.CrossEntropyLoss(reduction='sum')
         self.num_classes = 8
-        self.mod = mod
+        self.mod = hparams.mod
 
     def reparamterize(self, mu, logvar):
         std = torch.exp(0.5 * logvar)
