@@ -10,7 +10,7 @@ from dvae.utils.dataloader import get_dataloaders
 
 
 class Encoder(nn.Module):
-    def __init__(self, num_classes=8, hidden_state_size=501, latent_space_dim=56):
+    def __init__(self, num_classes=8, hidden_state_size=501, latent_space_dim=56, mod=None):
         super(Encoder, self).__init__()
         self.hidden_state_size = hidden_state_size
         self.gating_network = nn.Sequential(
@@ -22,6 +22,7 @@ class Encoder(nn.Module):
 
         self.lin11 = nn.Linear(hidden_state_size, latent_space_dim)
         self.lin12 = nn.Linear(hidden_state_size, latent_space_dim)
+        self.mod = mod
 
     def forward(self, X):
         dep_graph, node_encoding = X['graph'], X['node_encoding']
@@ -56,7 +57,7 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, num_classes=8, hidden_state_size=501, latent_space_dim=56):
+    def __init__(self, num_classes=8, hidden_state_size=501, latent_space_dim=56, mod=None):
         super(Decoder, self).__init__()
         self.hidden_state_size = hidden_state_size
         self.num_classes = num_classes
@@ -78,6 +79,7 @@ class Decoder(nn.Module):
         )
         self.mapping_network = nn.Linear(hidden_state_size, hidden_state_size)
         self.gru = nn.GRUCell(num_classes, hidden_state_size)
+        self.mod = mod
 
     def forward(self, z, X):
         dep_graph, node_encoding = X['graph'], X['node_encoding']
@@ -140,15 +142,21 @@ class Decoder(nn.Module):
 
 class Dvae(pl.LightningModule):
 
-    def __init__(self, batch_size, dataset_file):
+    def __init__(self, batch_size, dataset_file, mod=None):
+        """
+        batch_size: batch size 
+        dataset_file: dataset file
+        mod: Modification mode. Allowed values: None, 'nn' and 'bayesian'
+        """
         super(Dvae, self).__init__()
         self.train_loader, self.val_loader, self.test_loader = get_dataloaders(
             batch_size, dataset_file)
-        self.encoder = Encoder()
-        self.decoder = Decoder()
+        self.encoder = Encoder(mod=mod)
+        self.decoder = Decoder(mod=mod)
         self.bce_loss = torch.nn.BCEWithLogitsLoss(reduction='sum')
         self.cross_entropy_loss = torch.nn.CrossEntropyLoss(reduction='sum')
         self.num_classes = 8
+        self.mod = mod
 
     def reparamterize(self, mu, logvar):
         std = torch.exp(0.5 * logvar)
