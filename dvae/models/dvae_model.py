@@ -212,6 +212,7 @@ class Dvae(pl.LightningModule):
         mod: Modification mode. Allowed values: None, 'nn' and 'bayesian'
         """
         super(Dvae, self).__init__()
+        self.hparams = hparams
         self.train_loader, self.val_loader, self.test_loader = get_dataloaders(
             hparams.batch_size, hparams.dataset_file) if hparams.dataset_file else [None]*3
         self.encoder = Encoder(mod=hparams.mod)
