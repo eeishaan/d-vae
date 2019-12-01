@@ -37,9 +37,12 @@ class Encoder(nn.Module):
             ########## compute h_in ##########
             ancestor_mask = dep_graph[:, index].unsqueeze(-1)
 
+            # masking is a hack to avoid in-place update which break gradient computation
+            masked_hidden_state = node_hidden_state * ancestor_mask
+
             # broadcast mask here to zero out non-ancestor nodes
-            h_in = self.gating_network(node_hidden_state) * \
-                self.mapping_network(node_hidden_state) * \
+            h_in = self.gating_network(masked_hidden_state) * \
+                self.mapping_network(masked_hidden_state) * \
                 ancestor_mask
             h_in = torch.sum(h_in, dim=1)
 
@@ -122,8 +125,12 @@ class Decoder(nn.Module):
                 ancestors_mask[:, :v_j] = 0
                 ancestors_mask = ancestors * ancestors_mask
                 ancestors_mask.unsqueeze_(-1)
-                h_in = self.gating_network(node_hidden_state) * \
-                    self.mapping_network(node_hidden_state) * \
+
+                # masking is a hack to avoid in-place update which break gradient computation
+                masked_hidden_state = node_hidden_state * ancestors_mask
+
+                h_in = self.gating_network(masked_hidden_state) * \
+                    self.mapping_network(masked_hidden_state) * \
                     ancestors_mask
                 h_in = torch.sum(h_in, dim=1)
 
