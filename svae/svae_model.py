@@ -1,7 +1,7 @@
 import os
 import sys
 import torch
-import igraph
+# import igraph
 import torch.nn as nn
 import pytorch_lightning as pl
 from torch.nn import functional as F
@@ -169,17 +169,35 @@ class Svae(pl.LightningModule):
             'train_loss': loss}
         return {'loss': loss, 'log': tensorboard_logs}
 
-    # def validation_step(self, batch, batch_nb):
-    #     # OPTIONAL
-    #     x, y = batch
-    #     y_hat = self.forward(x)
-    #     return {'val_loss': F.cross_entropy(y_hat, y)}
+    def validation_step(self, batch, batch_nb):
+        # OPTIONAL
+        dep_graph = batch['graph']
+        node_encoding = dep_graph[:, :, :self.node_type]
+        dep_matrix = dep_graph[:, :, self.node_type:]
+        gen_dep_graph, gen_node_encoding, mu, logvar = self.forward(dep_graph)
 
-    # def validation_end(self, outputs):
-    #     # OPTIONAL
-    #     avg_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
-    #     tensorboard_logs = {'val_loss': avg_loss}
-    #     return {'avg_val_loss': avg_loss, 'log': tensorboard_logs}
+        edge_loss = self.bce_loss(gen_dep_graph, dep_matrix)
+        vertex_loss = self.cross_entropy_loss(
+            gen_node_encoding.view(-1, self.node_type),
+            torch.argmax(
+                node_encoding.view(-1, self.node_type).to(dtype=torch.float), dim=1))
+        kl_loss = -0.5 * torch.sum(1 + logvar - mu**2 - logvar.exp())
+        loss = edge_loss + vertex_loss + 0.005 * kl_loss
+
+        return {
+            'val_edge_loss': edge_loss,
+            'val_vertex_loss': vertex_loss,
+            'val_kl_loss': kl_loss,
+            'val_loss': loss}
+
+    def validation_end(self, outputs):
+        # OPTIONAL
+        loss_keys = ['val_loss', 'val_edge_loss',
+                     'val_vertex_loss', 'val_kl_loss']
+        metrics = {
+            key: torch.stack([x[key] for x in outputs]).mean() for key in loss_keys
+        }
+        return {'avg_val_loss': metrics['val_loss'], 'log': metrics}
 
     def configure_optimizers(self):
         # REQUIRED
@@ -195,7 +213,7 @@ class Svae(pl.LightningModule):
     @pl.data_loader
     def val_dataloader(self):
         # OPTIONAL
-        return self.val_loader
+        return self.val_loader[0]
 
     @pl.data_loader
     def test_dataloader(self):
