@@ -33,18 +33,17 @@ class Encoder(nn.Module):
 
         for index in range(seq_len):
             # TODO: add modification for NAS and bayesian task here
-            # compute h_in
-            ancestors = dep_graph[:, index]
-            ancestor_hidden_state = node_hidden_state * \
-                ancestors.unsqueeze(-1)
-            ancestor_hidden_state = ancestor_hidden_state.view(
-                -1, self.hidden_state_size)
-            h_in = self.gating_network(ancestor_hidden_state) * \
-                self.mapping_network(ancestor_hidden_state)
-            h_in = h_in.view(batch_size, -1, self.hidden_state_size)
+
+            ########## compute h_in ##########
+            ancestor_mask = dep_graph[:, index].unsqueeze(-1)
+
+            # broadcast mask here to zero out non-ancestor nodes
+            h_in = self.gating_network(node_hidden_state) * \
+                self.mapping_network(node_hidden_state) * \
+                ancestor_mask
             h_in = torch.sum(h_in, dim=1)
 
-            # comute hv
+            ########## comute hv ##########
             hv = self.gru(node_encoding[:, index], h_in)
             assert hv.shape == (batch_size, self.hidden_state_size), \
                 'Shape of hv is wrong, desired {} got {}'.format(
