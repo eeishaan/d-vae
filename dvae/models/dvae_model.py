@@ -176,18 +176,17 @@ class Decoder(nn.Module):
                 possible_edges[:, v_j] = is_edge.view(-1)
 
                 # TODO: add modification for NAS and bayesian task here
-                # compute h_in
+                ######### compute h_in #########
 
-                ancestor_hidden_state = possible_edges.unsqueeze(-1) * torch.stack(
+                c_node_hidden_state = torch.stack(
                     node_hidden_state).permute(1, 0, 2)
-                ancestor_hidden_state = ancestor_hidden_state.view(
-                    -1, self.hidden_state_size)
-                h_in = self.gating_network(ancestor_hidden_state) * \
-                    self.mapping_network(ancestor_hidden_state)
+                h_in = self.gating_network(c_node_hidden_state) * \
+                    self.mapping_network(c_node_hidden_state) * \
+                    possible_edges.unsqueeze(-1)
                 h_in = h_in.view(batch_size, -1, self.hidden_state_size)
                 h_in = torch.sum(h_in, dim=1)
 
-                # comute hv
+                ######### compute hv #########
                 hv = self.gru(new_node_encoding, h_in)
                 assert hv.shape == (batch_size, self.hidden_state_size), \
                     'Shape of hv is wrong, desired {} got {}'.format(
