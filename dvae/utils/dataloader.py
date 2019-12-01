@@ -8,10 +8,11 @@ from torch.utils.data import DataLoader, Dataset
 
 
 class NASDataset(Dataset):
-    def __init__(self, file_path, split='train'):
+
+    def __init__(self, file_path, split='train', fmt=None):
         super(NASDataset, self).__init__()
         self.file_path = file_path
-
+        self.fmt = fmt
         # load the file
         df = pd.read_csv(
             self.file_path,
@@ -50,7 +51,7 @@ class NASDataset(Dataset):
         node_encoding = np.zeros((seq_len, node_types), dtype=int)
 
         # capture input edges
-        dep_dict = {node_idx: set() for node_idx in range(1, seq_len-1)}
+        dep_dict = {node_idx: set() for node_idx in range(1, seq_len - 1)}
 
         # capture edges with successor except eos and sos node
         is_successor = np.zeros((seq_len - 1))
@@ -118,7 +119,14 @@ class NASDataset(Dataset):
         seq = NASDataset._add_delim(item[0])
         seq, node_encoding = NASDataset._process_seq(seq)
         acc = float(item[1])
-
+        if self.fmt == 'str':
+            seq = seq[1:, :].to(dtype=torch.float)
+            node_encoding = node_encoding[1:, :].to(dtype=torch.float)
+            seq = torch.cat((node_encoding, seq), -1)
+            return {
+                'graph': seq,
+                'acc': acc
+            }
         return {
             'graph': seq,
             'node_encoding': node_encoding,
@@ -126,10 +134,10 @@ class NASDataset(Dataset):
         }
 
 
-def get_dataloaders(batch_size, file_path):
-    train_dataset = NASDataset(file_path, split='train')
-    val_dataset = NASDataset(file_path, split='val')
-    test_dataset = NASDataset(file_path, split='test')
+def get_dataloaders(batch_size, file_path, fmt=None):
+    train_dataset = NASDataset(file_path, split='train', fmt=fmt)
+    val_dataset = NASDataset(file_path, split='val', fmt=fmt)
+    test_dataset = NASDataset(file_path, split='test', fmt=fmt)
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size,
         pin_memory=True, shuffle=True)
