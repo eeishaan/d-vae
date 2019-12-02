@@ -33,18 +33,20 @@ class Encoder(nn.Module):
 
         for index in range(seq_len):
             # TODO: add modification for NAS and bayesian task here
-            # compute h_in
-            ancestors = dep_graph[:, index]
-            ancestor_hidden_state = node_hidden_state * \
-                ancestors.unsqueeze(-1)
-            ancestor_hidden_state = ancestor_hidden_state.view(
-                -1, self.hidden_state_size)
-            h_in = self.gating_network(ancestor_hidden_state) * \
-                self.mapping_network(ancestor_hidden_state)
-            h_in = h_in.view(batch_size, -1, self.hidden_state_size)
+
+            ########## compute h_in ##########
+            ancestor_mask = dep_graph[:, index].unsqueeze(-1)
+
+            # masking is a hack to avoid in-place update which break gradient computation
+            masked_hidden_state = node_hidden_state * ancestor_mask
+
+            # broadcast mask here to zero out non-ancestor nodes
+            h_in = self.gating_network(masked_hidden_state) * \
+                self.mapping_network(masked_hidden_state) * \
+                ancestor_mask
             h_in = torch.sum(h_in, dim=1)
 
-            # comute hv
+            ########## comute hv ##########
             hv = self.gru(node_encoding[:, index], h_in)
             assert hv.shape == (batch_size, self.hidden_state_size), \
                 'Shape of hv is wrong, desired {} got {}'.format(
@@ -116,22 +118,23 @@ class Decoder(nn.Module):
                 gen_dep_graph[:, index, v_j] = is_edge.view(-1)
 
                 # TODO: add modification for NAS and bayesian task here
-                # compute h_in
+                ######### compute h_in #########
                 ancestors = dep_graph[:, index]
                 ancestors_mask = torch.ones_like(ancestors)
                 # zero out all ancestors before v_j
                 ancestors_mask[:, :v_j] = 0
-                ancestors = ancestors * ancestors_mask
-                ancestor_hidden_state = node_hidden_state * \
-                    ancestors.unsqueeze(-1)
-                ancestor_hidden_state = ancestor_hidden_state.view(
-                    -1, self.hidden_state_size)
-                h_in = self.gating_network(ancestor_hidden_state) * \
-                    self.mapping_network(ancestor_hidden_state)
-                h_in = h_in.view(batch_size, -1, self.hidden_state_size)
+                ancestors_mask = ancestors * ancestors_mask
+                ancestors_mask.unsqueeze_(-1)
+
+                # masking is a hack to avoid in-place update which break gradient computation
+                masked_hidden_state = node_hidden_state * ancestors_mask
+
+                h_in = self.gating_network(masked_hidden_state) * \
+                    self.mapping_network(masked_hidden_state) * \
+                    ancestors_mask
                 h_in = torch.sum(h_in, dim=1)
 
-                # comute hv
+                ######### compute hv #########
                 hv = self.gru(node_encoding[:, index], h_in)
                 assert hv.shape == (batch_size, self.hidden_state_size), \
                     'Shape of hv is wrong, desired {} got {}'.format(
@@ -180,18 +183,17 @@ class Decoder(nn.Module):
                 possible_edges[:, v_j] = is_edge.view(-1)
 
                 # TODO: add modification for NAS and bayesian task here
-                # compute h_in
+                ######### compute h_in #########
 
-                ancestor_hidden_state = possible_edges.unsqueeze(-1) * torch.stack(
+                c_node_hidden_state = torch.stack(
                     node_hidden_state).permute(1, 0, 2)
-                ancestor_hidden_state = ancestor_hidden_state.view(
-                    -1, self.hidden_state_size)
-                h_in = self.gating_network(ancestor_hidden_state) * \
-                    self.mapping_network(ancestor_hidden_state)
+                h_in = self.gating_network(c_node_hidden_state) * \
+                    self.mapping_network(c_node_hidden_state) * \
+                    possible_edges.unsqueeze(-1)
                 h_in = h_in.view(batch_size, -1, self.hidden_state_size)
                 h_in = torch.sum(h_in, dim=1)
 
-                # comute hv
+                ######### compute hv #########
                 hv = self.gru(new_node_encoding, h_in)
                 assert hv.shape == (batch_size, self.hidden_state_size), \
                     'Shape of hv is wrong, desired {} got {}'.format(
