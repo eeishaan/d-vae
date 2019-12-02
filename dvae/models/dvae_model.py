@@ -220,7 +220,8 @@ class Dvae(pl.LightningModule):
         self.encoder = Encoder(mod=hparams.mod)
         self.decoder = Decoder(mod=hparams.mod)
         self.bce_loss = torch.nn.BCEWithLogitsLoss(reduction='sum')
-        self.cross_entropy_loss = torch.nn.CrossEntropyLoss(reduction='sum')
+        self.cross_entropy_loss = torch.nn.LogSoftmax(
+            dim=2)  # (reduction='sum')
         self.num_classes = 8
         self.mod = hparams.mod
 
@@ -240,10 +241,11 @@ class Dvae(pl.LightningModule):
         dep_graph, node_encoding = batch['graph'], batch['node_encoding']
         (gen_dep_graph, gen_node_encoding), mu, logvar = self.forward(batch)
         edge_loss = self.bce_loss(gen_dep_graph, dep_graph)
-        vertex_loss = self.cross_entropy_loss(
-            gen_node_encoding.view(-1, self.num_classes),
-            torch.argmax(
-                node_encoding.view(-1, self.num_classes), dim=1))
+
+        nlog_prob = -1 * \
+            self.cross_entropy_loss(gen_node_encoding) * node_encoding
+        vertex_loss = nlog_prob.sum()
+
         kl_loss = -0.5 * torch.sum(1 + logvar - mu**2 - logvar.exp())
         loss = edge_loss + vertex_loss + 0.005 * kl_loss
 
@@ -259,10 +261,11 @@ class Dvae(pl.LightningModule):
         dep_graph, node_encoding = batch['graph'], batch['node_encoding']
         (gen_dep_graph, gen_node_encoding), mu, logvar = self.forward(batch)
         edge_loss = self.bce_loss(gen_dep_graph, dep_graph,)
-        vertex_loss = self.cross_entropy_loss(
-            gen_node_encoding.view(-1, self.num_classes),
-            torch.argmax(
-                node_encoding.view(-1, self.num_classes), dim=1))
+
+        nlog_prob = -1 * \
+            self.cross_entropy_loss(gen_node_encoding) * node_encoding
+        vertex_loss = nlog_prob.sum()
+
         kl_loss = -0.5 * torch.sum(1 + logvar - mu**2 - logvar.exp())
         loss = edge_loss + vertex_loss + 0.005 * kl_loss
         return {
