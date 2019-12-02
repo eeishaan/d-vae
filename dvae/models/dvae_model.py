@@ -250,8 +250,8 @@ class Dvae(pl.LightningModule):
         loss = edge_loss + vertex_loss + 0.005 * kl_loss
 
         tensorboard_logs = {
-            'tain/edge_loss': edge_loss.detach.item(),
-            'train/vertex_loss': vertex_loss.detach.item(),
+            'tain/edge_loss': edge_loss.detach().item(),
+            'train/vertex_loss': vertex_loss.detach().item(),
             'train/kl_loss': kl_loss.detach().item(),
             'train/loss': loss.detach().item()
         }
