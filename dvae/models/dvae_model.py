@@ -274,12 +274,12 @@ class Dvae(pl.LightningModule):
                 'val/edge_loss': edge_loss,
                 'val/vertex_loss': vertex_loss,
                 'val/kl_loss': kl_loss,
-                'val/loss': loss}
+                'val_loss': loss}
 
     def validation_end(self, outputs):
         # OPTIONAL
         with torch.no_grad():
-            loss_keys = ['val/loss', 'val/edge_loss',
+            loss_keys = ['val_loss', 'val/edge_loss',
                          'val/vertex_loss', 'val/kl_loss']
             metrics = {
                 key: torch.stack([x[key] for x in outputs]).mean() for key in loss_keys
