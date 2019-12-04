@@ -284,7 +284,7 @@ class Dvae(pl.LightningModule):
             metrics = {
                 key: torch.stack([x[key] for x in outputs]).mean() for key in loss_keys
             }
-        return {'avg_val_loss': metrics['val/loss'], 'log': metrics}
+        return {'avg_val_loss': metrics['val_loss'], 'log': metrics}
 
     def configure_optimizers(self):
         # REQUIRED
