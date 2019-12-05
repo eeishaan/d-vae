@@ -12,12 +12,14 @@ from dvae.utils.dataloader import get_dataloaders
 class Encoder(nn.Module):
     def __init__(self, num_classes=8, hidden_state_size=501, latent_space_dim=56, mod=None):
         super(Encoder, self).__init__()
+        self.seq_len = 8
         self.hidden_state_size = hidden_state_size
         self.gating_network = nn.Sequential(
-            nn.Linear(hidden_state_size, hidden_state_size),
+            nn.Linear(hidden_state_size + self.seq_len, hidden_state_size),
             nn.Sigmoid()
         )
-        self.mapping_network = nn.Linear(hidden_state_size, hidden_state_size)
+        self.mapping_network = nn.Linear(
+            hidden_state_size + self.seq_len, hidden_state_size)
         self.gru = nn.GRUCell(num_classes, hidden_state_size)
 
         self.lin11 = nn.Linear(hidden_state_size, latent_space_dim)
@@ -30,7 +32,9 @@ class Encoder(nn.Module):
         device = dep_graph.device
         node_hidden_state = torch.zeros(
             batch_size, seq_len, self.hidden_state_size, device=device)
-
+        ordering = torch.stack(
+            [torch.eye(self.seq_len, device=device)] * batch_size)
+        assert ordering.shape == (batch_size, seq_len, seq_len)
         for index in range(seq_len):
             # TODO: add modification for NAS and bayesian task here
 
@@ -38,7 +42,8 @@ class Encoder(nn.Module):
             ancestor_mask = dep_graph[:, index].unsqueeze(-1)
 
             # masking is a hack to avoid in-place update which break gradient computation
-            masked_hidden_state = node_hidden_state * ancestor_mask
+            masked_hidden_state = torch.cat(
+                [node_hidden_state, ordering], dim=-1) * ancestor_mask
 
             # broadcast mask here to zero out non-ancestor nodes
             h_in = self.gating_network(masked_hidden_state) * \
@@ -64,6 +69,8 @@ class Encoder(nn.Module):
 class Decoder(nn.Module):
     def __init__(self, num_classes=8, hidden_state_size=501, latent_space_dim=56, mod=None):
         super(Decoder, self).__init__()
+        self.seq_len = 8
+
         self.hidden_state_size = hidden_state_size
         self.num_classes = num_classes
         self.lin1 = nn.Linear(latent_space_dim, hidden_state_size)
@@ -78,10 +85,11 @@ class Decoder(nn.Module):
             nn.Linear(4*hidden_state_size, 1),
         )
         self.gating_network = nn.Sequential(
-            nn.Linear(hidden_state_size, hidden_state_size),
+            nn.Linear(hidden_state_size + self.seq_len, hidden_state_size),
             nn.Sigmoid()
         )
-        self.mapping_network = nn.Linear(hidden_state_size, hidden_state_size)
+        self.mapping_network = nn.Linear(
+            hidden_state_size + self.seq_len, hidden_state_size)
         self.gru = nn.GRUCell(num_classes, hidden_state_size)
         self.mod = mod
 
@@ -95,6 +103,10 @@ class Decoder(nn.Module):
         device = dep_graph.device
         node_hidden_state = torch.zeros(
             batch_size, seq_len, self.hidden_state_size, device=device)
+
+        ordering = torch.stack(
+            [torch.eye(self.seq_len, device=device)] * batch_size)
+        assert ordering.shape == (batch_size, seq_len, seq_len)
 
         graph_state = self.lin1(z)
 
@@ -127,7 +139,8 @@ class Decoder(nn.Module):
                 ancestors_mask.unsqueeze_(-1)
 
                 # masking is a hack to avoid in-place update which break gradient computation
-                masked_hidden_state = node_hidden_state * ancestors_mask
+                masked_hidden_state = torch.cat(
+                    [node_hidden_state, ordering], dim=-1) * ancestors_mask
 
                 h_in = self.gating_network(masked_hidden_state) * \
                     self.mapping_network(masked_hidden_state) * \
