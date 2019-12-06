@@ -277,6 +277,7 @@ class Dvae(pl.LightningModule):
             dim=2)  # (reduction='sum')
         self.num_classes = 8
         self.mod = hparams.mod
+        self.beta = getattr(hparams, 'beta', 0.005)
 
     def reparamterize(self, mu, logvar):
         std = torch.exp(0.5 * logvar)
@@ -322,7 +323,7 @@ class Dvae(pl.LightningModule):
             vertex_loss = nlog_prob.sum()
 
             kl_loss = -0.5 * torch.sum(1 + logvar - mu**2 - logvar.exp())
-            loss = edge_loss + vertex_loss + 0.005 * kl_loss
+            loss = edge_loss + vertex_loss + self.beta * kl_loss
             return {
                 'val/edge_loss': edge_loss,
                 'val/vertex_loss': vertex_loss,

@@ -11,6 +11,7 @@ hparams = {
     'batch_size': BATCH_SIZE,
     'dataset_file': os.path.join(DATA_DIR, 'final_structures6.txt'),
     'mod': None,
+    'beta': 0.005,
     'bidirectional': True
 }
 hparams = Namespace(**hparams)
