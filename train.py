@@ -10,7 +10,8 @@ from dvae.models.dvae_model import Dvae
 hparams = {
     'batch_size': BATCH_SIZE,
     'dataset_file': os.path.join(DATA_DIR, 'final_structures6.txt'),
-    'mod': None
+    'mod': None,
+    'bidirectional': True
 }
 hparams = Namespace(**hparams)
 
