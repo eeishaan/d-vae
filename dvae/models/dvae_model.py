@@ -10,7 +10,7 @@ from dvae.utils.dataloader import get_dataloaders
 
 
 class Encoder(nn.Module):
-    def __init__(self, num_classes=8, hidden_state_size=501, latent_space_dim=56, mod=None):
+    def __init__(self, num_classes=8, hidden_state_size=501, latent_space_dim=56, mod=None, is_bidirectional=False):
         super(Encoder, self).__init__()
         self.seq_len = 8
         self.hidden_state_size = hidden_state_size
@@ -25,6 +25,17 @@ class Encoder(nn.Module):
         self.lin11 = nn.Linear(hidden_state_size, latent_space_dim)
         self.lin12 = nn.Linear(hidden_state_size, latent_space_dim)
         self.mod = mod
+        self.is_bidirectional = is_bidirectional
+
+        if is_bidirectional:
+            self.back_gru = nn.GRUCell(num_classes, hidden_state_size)
+            self.back_mapping_network = nn.Linear(
+                hidden_state_size + self.seq_len, hidden_state_size)
+            self.back_gating_network = nn.Sequential(
+                nn.Linear(hidden_state_size + self.seq_len, hidden_state_size),
+                nn.Sigmoid()
+            )
+            self.lin01 = nn.Linear(2*hidden_state_size, hidden_state_size)
 
     def forward(self, X):
         dep_graph, node_encoding = X['graph'], X['node_encoding']
@@ -57,6 +68,34 @@ class Encoder(nn.Module):
                 'Shape of hv is wrong, desired {} got {}'.format(
                     (batch_size, self.hidden_state_size), hv.shape)
             node_hidden_state[:, index] = hv
+
+        if self.is_bidirectional:
+            back_dep_graph = dep_graph.transpose(1, 2)
+            back_node_hidden_state = torch.zeros(
+                batch_size, seq_len, self.hidden_state_size, device=device)
+            for index in range(seq_len-1, -1, -1):
+                # TODO: add modification for NAS and bayesian task here
+
+                ########## compute h_in ##########
+                ancestor_mask = back_dep_graph[:, index].unsqueeze(-1)
+                masked_hidden_state = torch.cat(
+                    [back_node_hidden_state, ordering], dim=2) * ancestor_mask
+
+                # broadcast mask here to zero out non-ancestor nodes
+                h_in = self.back_gating_network(masked_hidden_state) * \
+                    self.back_mapping_network(masked_hidden_state) * \
+                    ancestor_mask
+                h_in = torch.sum(h_in, dim=1)
+
+                ########## comute hv ##########
+                hv_back = self.back_gru(node_encoding[:, index], h_in)
+                assert hv_back.shape == (batch_size, self.hidden_state_size), \
+                    'Shape of hv_back is wrong, desired {} got {}'.format(
+                        (batch_size, self.hidden_state_size), hv.shape)
+                back_node_hidden_state[:, index] = hv_back
+
+                # concatenate forward and backward encoding
+                hv = self.lin01(torch.cat([hv, hv_back], dim=-1))
 
         mu = self.lin11(hv)
         logvar = self.lin12(hv)
@@ -230,7 +269,8 @@ class Dvae(pl.LightningModule):
         self.hparams = hparams
         self.train_loader, self.val_loader, self.test_loader = get_dataloaders(
             hparams.batch_size, hparams.dataset_file) if hparams.dataset_file else [None]*3
-        self.encoder = Encoder(mod=hparams.mod)
+        self.encoder = Encoder(
+            mod=hparams.mod, is_bidirectional=hparams.bidirectional)
         self.decoder = Decoder(mod=hparams.mod)
         self.bce_loss = torch.nn.BCEWithLogitsLoss(reduction='sum')
         self.log_softmax = torch.nn.LogSoftmax(
