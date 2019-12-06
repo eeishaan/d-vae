@@ -10,19 +10,32 @@ from dvae.utils.dataloader import get_dataloaders
 
 
 class Encoder(nn.Module):
-    def __init__(self, num_classes=8, hidden_state_size=501, latent_space_dim=56, mod=None):
+    def __init__(self, num_classes=8, hidden_state_size=501, latent_space_dim=56, mod=None, is_bidirectional=False):
         super(Encoder, self).__init__()
+        self.seq_len = 8
         self.hidden_state_size = hidden_state_size
         self.gating_network = nn.Sequential(
-            nn.Linear(hidden_state_size, hidden_state_size),
+            nn.Linear(hidden_state_size + self.seq_len, hidden_state_size),
             nn.Sigmoid()
         )
-        self.mapping_network = nn.Linear(hidden_state_size, hidden_state_size)
+        self.mapping_network = nn.Linear(
+            hidden_state_size + self.seq_len, hidden_state_size)
         self.gru = nn.GRUCell(num_classes, hidden_state_size)
 
         self.lin11 = nn.Linear(hidden_state_size, latent_space_dim)
         self.lin12 = nn.Linear(hidden_state_size, latent_space_dim)
         self.mod = mod
+        self.is_bidirectional = is_bidirectional
+
+        if is_bidirectional:
+            self.back_gru = nn.GRUCell(num_classes, hidden_state_size)
+            self.back_mapping_network = nn.Linear(
+                hidden_state_size + self.seq_len, hidden_state_size)
+            self.back_gating_network = nn.Sequential(
+                nn.Linear(hidden_state_size + self.seq_len, hidden_state_size),
+                nn.Sigmoid()
+            )
+            self.lin01 = nn.Linear(2*hidden_state_size, hidden_state_size)
 
     def forward(self, X):
         dep_graph, node_encoding = X['graph'], X['node_encoding']
@@ -30,7 +43,9 @@ class Encoder(nn.Module):
         device = dep_graph.device
         node_hidden_state = torch.zeros(
             batch_size, seq_len, self.hidden_state_size, device=device)
-
+        ordering = torch.stack(
+            [torch.eye(self.seq_len, device=device)] * batch_size)
+        assert ordering.shape == (batch_size, seq_len, seq_len)
         for index in range(seq_len):
             # TODO: add modification for NAS and bayesian task here
 
@@ -38,7 +53,8 @@ class Encoder(nn.Module):
             ancestor_mask = dep_graph[:, index].unsqueeze(-1)
 
             # masking is a hack to avoid in-place update which break gradient computation
-            masked_hidden_state = node_hidden_state * ancestor_mask
+            masked_hidden_state = torch.cat(
+                [node_hidden_state, ordering], dim=-1) * ancestor_mask
 
             # broadcast mask here to zero out non-ancestor nodes
             h_in = self.gating_network(masked_hidden_state) * \
@@ -53,6 +69,34 @@ class Encoder(nn.Module):
                     (batch_size, self.hidden_state_size), hv.shape)
             node_hidden_state[:, index] = hv
 
+        if self.is_bidirectional:
+            back_dep_graph = dep_graph.transpose(1, 2)
+            back_node_hidden_state = torch.zeros(
+                batch_size, seq_len, self.hidden_state_size, device=device)
+            for index in range(seq_len-1, -1, -1):
+                # TODO: add modification for NAS and bayesian task here
+
+                ########## compute h_in ##########
+                ancestor_mask = back_dep_graph[:, index].unsqueeze(-1)
+                masked_hidden_state = torch.cat(
+                    [back_node_hidden_state, ordering], dim=2) * ancestor_mask
+
+                # broadcast mask here to zero out non-ancestor nodes
+                h_in = self.back_gating_network(masked_hidden_state) * \
+                    self.back_mapping_network(masked_hidden_state) * \
+                    ancestor_mask
+                h_in = torch.sum(h_in, dim=1)
+
+                ########## comute hv ##########
+                hv_back = self.back_gru(node_encoding[:, index], h_in)
+                assert hv_back.shape == (batch_size, self.hidden_state_size), \
+                    'Shape of hv_back is wrong, desired {} got {}'.format(
+                        (batch_size, self.hidden_state_size), hv.shape)
+                back_node_hidden_state[:, index] = hv_back
+
+                # concatenate forward and backward encoding
+                hv = self.lin01(torch.cat([hv, hv_back], dim=-1))
+
         mu = self.lin11(hv)
         logvar = self.lin12(hv)
         return hv, mu, logvar
@@ -64,6 +108,8 @@ class Encoder(nn.Module):
 class Decoder(nn.Module):
     def __init__(self, num_classes=8, hidden_state_size=501, latent_space_dim=56, mod=None):
         super(Decoder, self).__init__()
+        self.seq_len = 8
+
         self.hidden_state_size = hidden_state_size
         self.num_classes = num_classes
         self.lin1 = nn.Linear(latent_space_dim, hidden_state_size)
@@ -78,10 +124,11 @@ class Decoder(nn.Module):
             nn.Linear(4*hidden_state_size, 1),
         )
         self.gating_network = nn.Sequential(
-            nn.Linear(hidden_state_size, hidden_state_size),
+            nn.Linear(hidden_state_size + self.seq_len, hidden_state_size),
             nn.Sigmoid()
         )
-        self.mapping_network = nn.Linear(hidden_state_size, hidden_state_size)
+        self.mapping_network = nn.Linear(
+            hidden_state_size + self.seq_len, hidden_state_size)
         self.gru = nn.GRUCell(num_classes, hidden_state_size)
         self.mod = mod
 
@@ -95,6 +142,10 @@ class Decoder(nn.Module):
         device = dep_graph.device
         node_hidden_state = torch.zeros(
             batch_size, seq_len, self.hidden_state_size, device=device)
+
+        ordering = torch.stack(
+            [torch.eye(self.seq_len, device=device)] * batch_size)
+        assert ordering.shape == (batch_size, seq_len, seq_len)
 
         graph_state = self.lin1(z)
 
@@ -127,7 +178,8 @@ class Decoder(nn.Module):
                 ancestors_mask.unsqueeze_(-1)
 
                 # masking is a hack to avoid in-place update which break gradient computation
-                masked_hidden_state = node_hidden_state * ancestors_mask
+                masked_hidden_state = torch.cat(
+                    [node_hidden_state, ordering], dim=-1) * ancestors_mask
 
                 h_in = self.gating_network(masked_hidden_state) * \
                     self.mapping_network(masked_hidden_state) * \
@@ -217,13 +269,15 @@ class Dvae(pl.LightningModule):
         self.hparams = hparams
         self.train_loader, self.val_loader, self.test_loader = get_dataloaders(
             hparams.batch_size, hparams.dataset_file) if hparams.dataset_file else [None]*3
-        self.encoder = Encoder(mod=hparams.mod)
+        self.encoder = Encoder(
+            mod=hparams.mod, is_bidirectional=hparams.bidirectional)
         self.decoder = Decoder(mod=hparams.mod)
         self.bce_loss = torch.nn.BCEWithLogitsLoss(reduction='sum')
         self.log_softmax = torch.nn.LogSoftmax(
             dim=2)  # (reduction='sum')
         self.num_classes = 8
         self.mod = hparams.mod
+        self.beta = getattr(hparams, 'beta', 0.005)
 
     def reparamterize(self, mu, logvar):
         std = torch.exp(0.5 * logvar)
@@ -250,7 +304,7 @@ class Dvae(pl.LightningModule):
         loss = edge_loss + vertex_loss + 0.005 * kl_loss
 
         tensorboard_logs = {
-            'tain/edge_loss': edge_loss.detach().item(),
+            'train/edge_loss': edge_loss.detach().item(),
             'train/vertex_loss': vertex_loss.detach().item(),
             'train/kl_loss': kl_loss.detach().item(),
             'train/loss': loss.detach().item()
@@ -269,7 +323,7 @@ class Dvae(pl.LightningModule):
             vertex_loss = nlog_prob.sum()
 
             kl_loss = -0.5 * torch.sum(1 + logvar - mu**2 - logvar.exp())
-            loss = edge_loss + vertex_loss + 0.005 * kl_loss
+            loss = edge_loss + vertex_loss + self.beta * kl_loss
             return {
                 'val/edge_loss': edge_loss,
                 'val/vertex_loss': vertex_loss,
