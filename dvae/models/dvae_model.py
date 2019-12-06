@@ -7,6 +7,7 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
 from dvae.utils.dataloader import get_dataloaders
+from dvae.utils.metrics import reconstruction_accuracy
 
 
 class Encoder(nn.Module):
@@ -211,10 +212,10 @@ class Decoder(nn.Module):
             new_node_type = F.softmax(
                 self.add_vertex(graph_state), dim=1)
             new_node_type = new_node_type.argmax(dim=1)
-            gen_nodes.append(new_node_type)
-
             new_node_encoding = F.one_hot(
                 new_node_type, num_classes=self.num_classes).float()
+
+            gen_nodes.append(new_node_encoding)
 
             # compute initial hidden states
             if index == 0:
@@ -254,7 +255,7 @@ class Decoder(nn.Module):
             node_hidden_state.append(hv)
             graph_state = hv
             index += 1
-        return gen_edges, gen_nodes
+        return torch.stack(gen_edges, dim=1), torch.stack(gen_nodes, dim=1)
 
 
 class Dvae(pl.LightningModule):
@@ -366,3 +367,28 @@ class Dvae(pl.LightningModule):
         z = self.reparamterize(mu, logvar)
         X_hat = self.decoder.predict(z)
         return X_hat
+
+    def model_eval(self, X, sample_num, decode_num):
+        with torch.no_grad():
+            _, mu, logvar = self.encoder.predict(X)
+            stack_mu = torch.stack([mu] * sample_num, dim=1)
+            stack_logvar = torch.stack([logvar] * sample_num, dim=1)
+            stack_z = self.reparamterize(stack_mu, stack_logvar)
+            batch_size, samples, hidden_size = stack_z.shape
+            assert samples == sample_num
+            sampled_z = stack_z.view(batch_size*sample_num, hidden_size)
+            gen_edges, gen_nodes = self.decoder.predict(sampled_z)
+
+            gen_edges = gen_edges.view(
+                batch_size, sample_num, gen_edges.shape[1:])
+            gen_nodes = gen_nodes.view(
+                batch_size, sample_num, gen_nodes.shape[1:])
+
+            true_edges, true_nodes = X['graph'], X['node_encoding']
+
+            recon_acc = reconstruction_accuracy(
+                true_nodes, true_edges, gen_nodes, gen_edges)
+
+            return {
+                'recon_acc': recon_acc
+            }
