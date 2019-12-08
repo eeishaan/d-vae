@@ -203,10 +203,15 @@ class Decoder(nn.Module):
         batch_size, _ = z.shape
         node_hidden_state = []
         graph_state = self.lin1(z)
+        seq_len = 8
+        device = z.device
+        ordering = torch.stack(
+            [torch.eye(self.seq_len, device=device)] * batch_size)
+        assert ordering.shape == (batch_size, seq_len, seq_len)
 
         index = 0
         while True:
-            if index == 8:
+            if index == seq_len:
                 break
             # sample node type
             new_node_type = F.softmax(
@@ -240,6 +245,8 @@ class Decoder(nn.Module):
 
                 c_node_hidden_state = torch.stack(
                     node_hidden_state).permute(1, 0, 2)
+                c_node_hidden_state = torch.cat(
+                    [c_node_hidden_state, ordering[:, :index]], dim=-1)
                 h_in = self.gating_network(c_node_hidden_state) * \
                     self.mapping_network(c_node_hidden_state) * \
                     possible_edges.unsqueeze(-1)
