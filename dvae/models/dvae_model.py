@@ -262,7 +262,12 @@ class Decoder(nn.Module):
             node_hidden_state.append(hv)
             graph_state = hv
             index += 1
-        return torch.stack(gen_edges, dim=1), torch.stack(gen_nodes, dim=1)
+        res_gen_edges = torch.zeros(
+            batch_size, seq_len, seq_len, device=device)
+        for row_idx in range(1, seq_len):
+            res_gen_edges[:, row_idx, :row_idx] = gen_edges[row_idx]
+
+        return res_gen_edges, torch.stack(gen_nodes, dim=1)
 
 
 class Dvae(pl.LightningModule):
@@ -387,9 +392,9 @@ class Dvae(pl.LightningModule):
             gen_edges, gen_nodes = self.decoder.predict(sampled_z)
 
             gen_edges = gen_edges.view(
-                batch_size, sample_num, gen_edges.shape[1:])
+                batch_size, sample_num, *gen_edges.shape[1:])
             gen_nodes = gen_nodes.view(
-                batch_size, sample_num, gen_nodes.shape[1:])
+                batch_size, sample_num, *gen_nodes.shape[1:])
 
             true_edges, true_nodes = X['graph'], X['node_encoding']
 
