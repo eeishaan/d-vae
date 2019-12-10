@@ -132,7 +132,7 @@ def main():
             epoch, val_loss, val_acc))
         print('-' * 89)
 
-        scheduler.step()
+        lr_schedule.step()
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
