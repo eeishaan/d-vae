@@ -51,7 +51,7 @@ def train(epoch, data_loader, model, optimizer, device):
     return avg_loss, accuracy
 
 
-def evaluate(eval_model, data_loader, device):
+def evaluate(model, data_loader, device):
     eval_model.eval()
     total_loss = 0.
     count = 0.
