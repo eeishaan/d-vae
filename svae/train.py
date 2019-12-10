@@ -13,7 +13,6 @@ from dvae.utils.dataloader import get_dataloaders
 def train(epoch, data_loader, model, optimizer):
     model.train()
     total_loss = 0.
-    start_time = time.time()
     count = 0.
     node_type = 8
 
