@@ -102,7 +102,7 @@ def main():
 
     train_loader, val_loader, test_loader = get_dataloaders(
         BATCH_SIZE, dataset_file, fmt='str')
-
+    val_loader = val_loader[0]
     best_val_loss = float("inf")
     best_val_acc = 0.0
     epochs = args.max_epochs
