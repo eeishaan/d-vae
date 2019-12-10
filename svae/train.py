@@ -52,7 +52,7 @@ def train(epoch, data_loader, model, optimizer, device):
 
 
 def evaluate(model, data_loader, device):
-    eval_model.eval()
+    model.eval()
     total_loss = 0.
     count = 0.
     node_type = 8
