@@ -67,7 +67,7 @@ class Decoder(nn.Module):
 
     def forward(self, z):
         h_0 = self.relu(self.fc_h0(z))
-        inp = z.new_zeros((z.shape[0], self.max_seq_len - 1, self.hidden_size))
+        inp = z.new_zeros((z.shape[0], self.max_seq_len, self.hidden_size))
         h_out, _ = self.gru_layer(inp, h_0.unsqueeze(0))
         type_scores = self.add_vertex(h_out)
         edge_scores = self.sigmoid(self.add_edges(h_out))
@@ -147,6 +147,15 @@ class Svae(pl.LightningModule):
 
         return gen_dep_graph, gen_node_encoding, mu, logvar
 
+    def compute_accuracy(self, gen_dep_graph, gen_node_encoding, true_dep_graph):
+        pred_dep_graph = torch.cat((gen_node_encoding, gen_dep_graph), dim=-1)
+        is_equal = torch.eq(pred_dep_graph, true_dep_graph)
+        l = is_equal.shape[-1] + is_equal.shape[-2]
+        is_equal = torch.sum(torch.sum(is_equal, dim=-1), dim=-1)
+        count = torch.sum(is_equal == l).to(dtype=torch.float)
+        # acc = count / len(is_equal)
+        return count
+
     def training_step(self, batch, batch_nb):
         # REQUIRED
         dep_graph = batch['graph']
@@ -161,43 +170,50 @@ class Svae(pl.LightningModule):
                 node_encoding.view(-1, self.node_type).to(dtype=torch.float), dim=1))
         kl_loss = -0.5 * torch.sum(1 + logvar - mu**2 - logvar.exp())
         loss = edge_loss + vertex_loss + 0.005 * kl_loss
-
+        acc = self.compute_accuracy(gen_dep_graph, gen_node_encoding, dep_graph)
         tensorboard_logs = {
             'edge_loss': edge_loss,
             'vertex_loss': vertex_loss,
             'kl_loss': kl_loss,
-            'train_loss': loss}
+            'train_loss': loss,
+            'train_acc': acc
+        }
         return {'loss': loss, 'log': tensorboard_logs}
 
     def validation_step(self, batch, batch_nb):
         # OPTIONAL
-        dep_graph = batch['graph']
-        node_encoding = dep_graph[:, :, :self.node_type]
-        dep_matrix = dep_graph[:, :, self.node_type:]
-        gen_dep_graph, gen_node_encoding, mu, logvar = self.forward(dep_graph)
+        with torch.no_grad():
+            dep_graph = batch['graph']
+            node_encoding = dep_graph[:, :, :self.node_type]
+            dep_matrix = dep_graph[:, :, self.node_type:]
+            gen_dep_graph, gen_node_encoding, mu, logvar = self.forward(dep_graph)
 
-        edge_loss = self.bce_loss(gen_dep_graph, dep_matrix)
-        vertex_loss = self.cross_entropy_loss(
-            gen_node_encoding.view(-1, self.node_type),
-            torch.argmax(
-                node_encoding.view(-1, self.node_type).to(dtype=torch.float), dim=1))
-        kl_loss = -0.5 * torch.sum(1 + logvar - mu**2 - logvar.exp())
-        loss = edge_loss + vertex_loss + 0.005 * kl_loss
+            edge_loss = self.bce_loss(gen_dep_graph, dep_matrix)
+            vertex_loss = self.cross_entropy_loss(
+                gen_node_encoding.view(-1, self.node_type),
+                torch.argmax(
+                    node_encoding.view(-1, self.node_type).to(dtype=torch.float), dim=1))
+            kl_loss = -0.5 * torch.sum(1 + logvar - mu**2 - logvar.exp())
+            loss = edge_loss + vertex_loss + 0.005 * kl_loss
+            acc = self.compute_accuracy(gen_dep_graph, gen_node_encoding, dep_graph)
 
         return {
             'val_edge_loss': edge_loss,
             'val_vertex_loss': vertex_loss,
             'val_kl_loss': kl_loss,
-            'val_loss': loss}
+            'val_loss': loss,
+            'val_acc': acc
+        }
 
     def validation_end(self, outputs):
         # OPTIONAL
-        loss_keys = ['val_loss', 'val_edge_loss',
-                     'val_vertex_loss', 'val_kl_loss']
-        metrics = {
-            key: torch.stack([x[key] for x in outputs]).mean() for key in loss_keys
-        }
-        return {'avg_val_loss': metrics['val_loss'], 'log': metrics}
+        with torch.no_grad():
+            loss_keys = ['val_loss', 'val_edge_loss',
+                         'val_vertex_loss', 'val_kl_loss', 'val_acc']
+            metrics = {
+                key: torch.stack([x[key] for x in outputs]).mean() for key in loss_keys
+            }
+        return {'avg_val_loss': metrics['val_loss'], 'val_acc': metrics['val_acc'], 'log': metrics}
 
     def configure_optimizers(self):
         # REQUIRED

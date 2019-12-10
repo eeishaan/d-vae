@@ -120,8 +120,8 @@ class NASDataset(Dataset):
         seq, node_encoding = NASDataset._process_seq(seq)
         acc = float(item[1])
         if self.fmt == 'str':
-            seq = seq[1:, :].to(dtype=torch.float)
-            node_encoding = node_encoding[1:, :].to(dtype=torch.float)
+            seq = seq.to(dtype=torch.float)  # [1:, :]
+            node_encoding = node_encoding.to(dtype=torch.float)  # [1:, :]
             seq = torch.cat((node_encoding, seq), -1)
             return {
                 'graph': seq,
