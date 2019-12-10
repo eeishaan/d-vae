@@ -7,6 +7,7 @@ from pytorch_lightning import Trainer
 
 from constants import BATCH_SIZE, DATA_DIR, MODEL_DIR
 from svae_model import Svae
+from dvae.utils.dataloader import get_dataloaders
 
 
 def train(epoch, data_loader, model, optimizer):
