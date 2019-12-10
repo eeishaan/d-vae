@@ -111,7 +111,7 @@ def main():
     lr = args.lr
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    lr_schedule = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer)
+    lr_schedule = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min')
 
     train_accs = []
     val_accs = []
@@ -132,7 +132,7 @@ def main():
             epoch, val_loss, val_acc))
         print('-' * 89)
 
-        lr_schedule.step()
+        lr_schedule.step(val_loss)
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
