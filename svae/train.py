@@ -10,7 +10,7 @@ from svae_model import Svae
 from dvae.utils.dataloader import get_dataloaders
 
 
-def train(epoch, data_loader, model, optimizer):
+def train(epoch, data_loader, model, optimizer, device):
     model.train()
     total_loss = 0.
     count = 0.
@@ -20,7 +20,7 @@ def train(epoch, data_loader, model, optimizer):
 
         optimizer.zero_grad()
 
-        dep_graph = batch['graph']
+        dep_graph = batch['graph'].to(device)
         node_encoding = dep_graph[:, :, :node_type]
         dep_matrix = dep_graph[:, :, node_type:]
 
@@ -51,14 +51,14 @@ def train(epoch, data_loader, model, optimizer):
     return avg_loss, accuracy
 
 
-def evaluate(eval_model, data_loader):
+def evaluate(eval_model, data_loader, device):
     eval_model.eval()
     total_loss = 0.
     count = 0.
     with torch.no_grad():
         for i, batch in enumerate(data_loader):
 
-            dep_graph = batch['graph']
+            dep_graph = batch['graph'].to(device)
             node_encoding = dep_graph[:, :, :node_type]
             dep_matrix = dep_graph[:, :, node_type:]
 
@@ -120,10 +120,10 @@ def main():
 
     for epoch in range(1, epochs + 1):
 
-        train_loss, train_acc = train(epoch, train_loader, model, optimizer)
+        train_loss, train_acc = train(epoch, train_loader, model, optimizer, device)
         train_accs.append(train_acc)
         train_losses.append(train_loss)
-        val_loss, val_acc = evaluate(model, val_loader)
+        val_loss, val_acc = evaluate(model, val_loader, device)
         val_accs.append(val_acc)
         val_losses.append(val_loss)
         print('-' * 89)
