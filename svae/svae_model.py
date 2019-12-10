@@ -74,12 +74,12 @@ class Decoder(nn.Module):
         return type_scores, edge_scores
 
 
-class Svae(pl.LightningModule):
+class Svae(nn.Module):
 
     def __init__(self, batch_size, dataset_file):
         super(Svae, self).__init__()
-        self.train_loader, self.val_loader, self.test_loader = get_dataloaders(
-            batch_size, dataset_file, fmt='str')
+        # self.train_loader, self.val_loader, self.test_loader = get_dataloaders(
+        #     batch_size, dataset_file, fmt='str')
         self.node_type = 8
         self.max_seq_len = 8
         self.encoder = Encoder()
@@ -153,7 +153,6 @@ class Svae(pl.LightningModule):
         l = is_equal.shape[-1] + is_equal.shape[-2]
         is_equal = torch.sum(torch.sum(is_equal, dim=-1), dim=-1)
         count = torch.sum(is_equal == l).to(dtype=torch.float)
-        # acc = count / len(is_equal)
         return count
 
     def training_step(self, batch, batch_nb):
