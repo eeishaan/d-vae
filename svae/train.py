@@ -28,9 +28,9 @@ def train(epoch, data_loader, model, optimizer, device):
 
         edge_loss = model.bce_loss(gen_dep_graph, dep_matrix)
         vertex_loss = model.cross_entropy_loss(
-            gen_node_encoding.view(-1, self.node_type),
+            gen_node_encoding.view(-1, node_type),
             torch.argmax(
-                node_encoding.view(-1, self.node_type).to(dtype=torch.float), dim=1))
+                node_encoding.view(-1, node_type).to(dtype=torch.float), dim=1))
 
         kl_loss = -0.5 * torch.sum(1 + logvar - mu**2 - logvar.exp())
 
@@ -55,6 +55,7 @@ def evaluate(eval_model, data_loader, device):
     eval_model.eval()
     total_loss = 0.
     count = 0.
+    node_type = 8
     with torch.no_grad():
         for i, batch in enumerate(data_loader):
 
@@ -66,9 +67,9 @@ def evaluate(eval_model, data_loader, device):
 
             edge_loss = model.bce_loss(gen_dep_graph, dep_matrix)
             vertex_loss = model.cross_entropy_loss(
-                gen_node_encoding.view(-1, self.node_type),
+                gen_node_encoding.view(-1, node_type),
                 torch.argmax(
-                    node_encoding.view(-1, self.node_type).to(dtype=torch.float), dim=1))
+                    node_encoding.view(-1, node_type).to(dtype=torch.float), dim=1))
 
             kl_loss = -0.5 * torch.sum(1 + logvar - mu**2 - logvar.exp())
 
