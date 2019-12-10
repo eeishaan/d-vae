@@ -155,3 +155,6 @@ def main():
                    'test_acc': test_acc
                    }
     pickle.dump(log_results, open(f'log_results.pkl', 'wb'))
+
+if __name__ == '__main__':
+    main()
