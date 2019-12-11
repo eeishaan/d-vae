@@ -7,21 +7,36 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
 from dvae.utils.dataloader import get_dataloaders
+from dvae.utils.metrics import reconstruction_accuracy
 
 
 class Encoder(nn.Module):
-    def __init__(self, num_classes=8, hidden_state_size=501, latent_space_dim=56):
+    def __init__(self, num_classes=8, hidden_state_size=501, latent_space_dim=56, mod=None, is_bidirectional=False):
         super(Encoder, self).__init__()
+        self.seq_len = 8
         self.hidden_state_size = hidden_state_size
         self.gating_network = nn.Sequential(
-            nn.Linear(hidden_state_size, hidden_state_size),
+            nn.Linear(hidden_state_size + self.seq_len, hidden_state_size),
             nn.Sigmoid()
         )
-        self.mapping_network = nn.Linear(hidden_state_size, hidden_state_size)
+        self.mapping_network = nn.Linear(
+            hidden_state_size + self.seq_len, hidden_state_size)
         self.gru = nn.GRUCell(num_classes, hidden_state_size)
 
         self.lin11 = nn.Linear(hidden_state_size, latent_space_dim)
         self.lin12 = nn.Linear(hidden_state_size, latent_space_dim)
+        self.mod = mod
+        self.is_bidirectional = is_bidirectional
+
+        if is_bidirectional:
+            self.back_gru = nn.GRUCell(num_classes, hidden_state_size)
+            self.back_mapping_network = nn.Linear(
+                hidden_state_size + self.seq_len, hidden_state_size)
+            self.back_gating_network = nn.Sequential(
+                nn.Linear(hidden_state_size + self.seq_len, hidden_state_size),
+                nn.Sigmoid()
+            )
+            self.lin01 = nn.Linear(2*hidden_state_size, hidden_state_size)
 
     def forward(self, X):
         dep_graph, node_encoding = X['graph'], X['node_encoding']
@@ -29,35 +44,73 @@ class Encoder(nn.Module):
         device = dep_graph.device
         node_hidden_state = torch.zeros(
             batch_size, seq_len, self.hidden_state_size, device=device)
-
+        ordering = torch.stack(
+            [torch.eye(self.seq_len, device=device)] * batch_size)
+        assert ordering.shape == (batch_size, seq_len, seq_len)
         for index in range(seq_len):
             # TODO: add modification for NAS and bayesian task here
-            # compute h_in
-            ancestors = dep_graph[:, index]
-            ancestor_hidden_state = node_hidden_state * \
-                ancestors.view(batch_size, -1, 1)
-            ancestor_hidden_state = ancestor_hidden_state.view(
-                -1, self.hidden_state_size)
-            h_in = self.gating_network(ancestor_hidden_state) * \
-                self.mapping_network(ancestor_hidden_state)
-            h_in = h_in.view(batch_size, -1, self.hidden_state_size)
+
+            ########## compute h_in ##########
+            ancestor_mask = dep_graph[:, index].unsqueeze(-1)
+
+            # masking is a hack to avoid in-place update which break gradient computation
+            masked_hidden_state = torch.cat(
+                [node_hidden_state, ordering], dim=-1) * ancestor_mask
+
+            # broadcast mask here to zero out non-ancestor nodes
+            h_in = self.gating_network(masked_hidden_state) * \
+                self.mapping_network(masked_hidden_state) * \
+                ancestor_mask
             h_in = torch.sum(h_in, dim=1)
 
-            # comute hv
+            ########## comute hv ##########
             hv = self.gru(node_encoding[:, index], h_in)
             assert hv.shape == (batch_size, self.hidden_state_size), \
                 'Shape of hv is wrong, desired {} got {}'.format(
                     (batch_size, self.hidden_state_size), hv.shape)
             node_hidden_state[:, index] = hv
 
+        if self.is_bidirectional:
+            back_dep_graph = dep_graph.transpose(1, 2)
+            back_node_hidden_state = torch.zeros(
+                batch_size, seq_len, self.hidden_state_size, device=device)
+            for index in range(seq_len-1, -1, -1):
+                # TODO: add modification for NAS and bayesian task here
+
+                ########## compute h_in ##########
+                ancestor_mask = back_dep_graph[:, index].unsqueeze(-1)
+                masked_hidden_state = torch.cat(
+                    [back_node_hidden_state, ordering], dim=2) * ancestor_mask
+
+                # broadcast mask here to zero out non-ancestor nodes
+                h_in = self.back_gating_network(masked_hidden_state) * \
+                    self.back_mapping_network(masked_hidden_state) * \
+                    ancestor_mask
+                h_in = torch.sum(h_in, dim=1)
+
+                ########## comute hv ##########
+                hv_back = self.back_gru(node_encoding[:, index], h_in)
+                assert hv_back.shape == (batch_size, self.hidden_state_size), \
+                    'Shape of hv_back is wrong, desired {} got {}'.format(
+                        (batch_size, self.hidden_state_size), hv.shape)
+                back_node_hidden_state[:, index] = hv_back
+
+                # concatenate forward and backward encoding
+                hv = self.lin01(torch.cat([hv, hv_back], dim=-1))
+
         mu = self.lin11(hv)
         logvar = self.lin12(hv)
         return hv, mu, logvar
 
+    def predict(self, X):
+        return self.forward(X)
+
 
 class Decoder(nn.Module):
-    def __init__(self, num_classes=8, hidden_state_size=501, latent_space_dim=56):
+    def __init__(self, num_classes=8, hidden_state_size=501, latent_space_dim=56, mod=None):
         super(Decoder, self).__init__()
+        self.seq_len = 8
+
         self.hidden_state_size = hidden_state_size
         self.num_classes = num_classes
         self.lin1 = nn.Linear(latent_space_dim, hidden_state_size)
@@ -65,7 +118,6 @@ class Decoder(nn.Module):
             nn.Linear(hidden_state_size, 2*hidden_state_size),
             nn.ReLU(),
             nn.Linear(2*hidden_state_size, num_classes),
-            nn.Softmax()
         )
         self.add_edge = nn.Sequential(
             nn.Linear(2*hidden_state_size, 4*hidden_state_size),
@@ -73,11 +125,13 @@ class Decoder(nn.Module):
             nn.Linear(4*hidden_state_size, 1),
         )
         self.gating_network = nn.Sequential(
-            nn.Linear(hidden_state_size, hidden_state_size),
+            nn.Linear(hidden_state_size + self.seq_len, hidden_state_size),
             nn.Sigmoid()
         )
-        self.mapping_network = nn.Linear(hidden_state_size, hidden_state_size)
+        self.mapping_network = nn.Linear(
+            hidden_state_size + self.seq_len, hidden_state_size)
         self.gru = nn.GRUCell(num_classes, hidden_state_size)
+        self.mod = mod
 
     def forward(self, z, X):
         dep_graph, node_encoding = X['graph'], X['node_encoding']
@@ -89,6 +143,10 @@ class Decoder(nn.Module):
         device = dep_graph.device
         node_hidden_state = torch.zeros(
             batch_size, seq_len, self.hidden_state_size, device=device)
+
+        ordering = torch.stack(
+            [torch.eye(self.seq_len, device=device)] * batch_size)
+        assert ordering.shape == (batch_size, seq_len, seq_len)
 
         graph_state = self.lin1(z)
 
@@ -112,22 +170,24 @@ class Decoder(nn.Module):
                 gen_dep_graph[:, index, v_j] = is_edge.view(-1)
 
                 # TODO: add modification for NAS and bayesian task here
-                # compute h_in
+                ######### compute h_in #########
                 ancestors = dep_graph[:, index]
                 ancestors_mask = torch.ones_like(ancestors)
                 # zero out all ancestors before v_j
                 ancestors_mask[:, :v_j] = 0
-                ancestors = ancestors * ancestors_mask
-                ancestor_hidden_state = node_hidden_state * \
-                    ancestors.view(batch_size, -1, 1)
-                ancestor_hidden_state = ancestor_hidden_state.view(
-                    -1, self.hidden_state_size)
-                h_in = self.gating_network(ancestor_hidden_state) * \
-                    self.mapping_network(ancestor_hidden_state)
-                h_in = h_in.view(batch_size, -1, self.hidden_state_size)
+                ancestors_mask = ancestors * ancestors_mask
+                ancestors_mask.unsqueeze_(-1)
+
+                # masking is a hack to avoid in-place update which break gradient computation
+                masked_hidden_state = torch.cat(
+                    [node_hidden_state, ordering], dim=-1) * ancestors_mask
+
+                h_in = self.gating_network(masked_hidden_state) * \
+                    self.mapping_network(masked_hidden_state) * \
+                    ancestors_mask
                 h_in = torch.sum(h_in, dim=1)
 
-                # comute hv
+                ######### compute hv #########
                 hv = self.gru(node_encoding[:, index], h_in)
                 assert hv.shape == (batch_size, self.hidden_state_size), \
                     'Shape of hv is wrong, desired {} got {}'.format(
@@ -137,18 +197,100 @@ class Decoder(nn.Module):
             graph_state = hv
         return gen_dep_graph, gen_node_encoding
 
+    def predict(self, z):
+        gen_edges = []
+        gen_nodes = []
+        batch_size, _ = z.shape
+        node_hidden_state = []
+        graph_state = self.lin1(z)
+        seq_len = 8
+        device = z.device
+        ordering = torch.stack(
+            [torch.eye(self.seq_len, device=device)] * batch_size)
+        assert ordering.shape == (batch_size, seq_len, seq_len)
+
+        index = 0
+        while True:
+            if index == seq_len:
+                break
+            # sample node type
+            new_node_type = F.softmax(
+                self.add_vertex(graph_state), dim=1)
+            new_node_type = new_node_type.argmax(dim=1)
+            new_node_encoding = F.one_hot(
+                new_node_type, num_classes=self.num_classes).float()
+
+            gen_nodes.append(new_node_encoding)
+
+            # compute initial hidden states
+            if index == 0:
+                h_in = graph_state
+                hv = self.gru(new_node_encoding, h_in)
+            else:
+                hv = self.gru(new_node_encoding)
+
+            possible_edges = torch.zeros(
+                batch_size, max(0, index), dtype=torch.float)
+            # sample edges
+            for v_j in range(index-1, -1, -1):
+                hidden_j = node_hidden_state[v_j]
+                is_edge = self.add_edge(torch.cat([hv, hidden_j], dim=1))
+                is_edge = F.sigmoid(is_edge)
+                is_edge[is_edge >= 0.5] = 1
+                is_edge[is_edge < 0.5] = 0
+                possible_edges[:, v_j] = is_edge.view(-1)
+
+                # TODO: add modification for NAS and bayesian task here
+                ######### compute h_in #########
+
+                c_node_hidden_state = torch.stack(
+                    node_hidden_state).permute(1, 0, 2)
+                c_node_hidden_state = torch.cat(
+                    [c_node_hidden_state, ordering[:, :index]], dim=-1)
+                h_in = self.gating_network(c_node_hidden_state) * \
+                    self.mapping_network(c_node_hidden_state) * \
+                    possible_edges.unsqueeze(-1)
+                h_in = h_in.view(batch_size, -1, self.hidden_state_size)
+                h_in = torch.sum(h_in, dim=1)
+
+                ######### compute hv #########
+                hv = self.gru(new_node_encoding, h_in)
+                assert hv.shape == (batch_size, self.hidden_state_size), \
+                    'Shape of hv is wrong, desired {} got {}'.format(
+                        (batch_size, self.hidden_state_size), hv.shape)
+            gen_edges.append(possible_edges)
+            node_hidden_state.append(hv)
+            graph_state = hv
+            index += 1
+        res_gen_edges = torch.zeros(
+            batch_size, seq_len, seq_len, device=device)
+        for row_idx in range(1, seq_len):
+            res_gen_edges[:, row_idx, :row_idx] = gen_edges[row_idx]
+
+        return res_gen_edges, torch.stack(gen_nodes, dim=1)
+
 
 class Dvae(pl.LightningModule):
 
-    def __init__(self, batch_size, dataset_file):
+    def __init__(self, hparams):
+        """
+        batch_size: batch size 
+        dataset_file: dataset file
+        mod: Modification mode. Allowed values: None, 'nn' and 'bayesian'
+        """
         super(Dvae, self).__init__()
+        self.hparams = hparams
         self.train_loader, self.val_loader, self.test_loader = get_dataloaders(
-            batch_size, dataset_file)
-        self.encoder = Encoder()
-        self.decoder = Decoder()
-        self.bce_loss = torch.nn.BCEWithLogitsLoss()
-        self.cross_entropy_loss = torch.nn.CrossEntropyLoss()
+            hparams.batch_size, hparams.dataset_file) if hparams.dataset_file else [None]*3
+        self.encoder = Encoder(
+            mod=hparams.mod, is_bidirectional=hparams.bidirectional)
+        self.decoder = Decoder(mod=hparams.mod)
+        self.bce_loss = torch.nn.BCEWithLogitsLoss(reduction='sum')
+        self.log_softmax = torch.nn.LogSoftmax(
+            dim=2)  # (reduction='sum')
         self.num_classes = 8
+        self.mod = hparams.mod
+        self.beta = getattr(hparams, 'beta', 0.005)
 
     def reparamterize(self, mu, logvar):
         std = torch.exp(0.5 * logvar)
@@ -165,32 +307,51 @@ class Dvae(pl.LightningModule):
         # REQUIRED
         dep_graph, node_encoding = batch['graph'], batch['node_encoding']
         (gen_dep_graph, gen_node_encoding), mu, logvar = self.forward(batch)
-        edge_loss = self.bce_loss(gen_dep_graph, dep_graph, reduction='sum')
-        vertex_loss = self.cross_entropy_loss(
-            gen_node_encoding.view(-1, self.num_classes),
-            torch.argmax(
-                node_encoding.view(-1, self.num_classes), dim=1), reduction='sum')
+        edge_loss = self.bce_loss(gen_dep_graph, dep_graph)
+
+        nlog_prob = -1 * \
+            self.log_softmax(gen_node_encoding) * node_encoding
+        vertex_loss = nlog_prob.sum()
+
         kl_loss = -0.5 * torch.sum(1 + logvar - mu**2 - logvar.exp())
         loss = edge_loss + vertex_loss + 0.005 * kl_loss
 
         tensorboard_logs = {
-            'edge_loss': edge_loss,
-            'vertex_loss': vertex_loss,
-            'kl_loss': kl_loss,
-            'train_loss': loss}
+            'train/edge_loss': edge_loss.detach().item(),
+            'train/vertex_loss': vertex_loss.detach().item(),
+            'train/kl_loss': kl_loss.detach().item(),
+            'train/loss': loss.detach().item()
+        }
         return {'loss': loss, 'log': tensorboard_logs}
 
-    # def validation_step(self, batch, batch_nb):
-    #     # OPTIONAL
-    #     x, y = batch
-    #     y_hat = self.forward(x)
-    #     return {'val_loss': F.cross_entropy(y_hat, y)}
+    def validation_step(self, batch, batch_nb):
+        # OPTIONAL
+        with torch.no_grad():
+            dep_graph, node_encoding = batch['graph'], batch['node_encoding']
+            (gen_dep_graph, gen_node_encoding), mu, logvar = self.forward(batch)
+            edge_loss = self.bce_loss(gen_dep_graph, dep_graph,)
 
-    # def validation_end(self, outputs):
-    #     # OPTIONAL
-    #     avg_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
-    #     tensorboard_logs = {'val_loss': avg_loss}
-    #     return {'avg_val_loss': avg_loss, 'log': tensorboard_logs}
+            nlog_prob = -1 * \
+                self.log_softmax(gen_node_encoding) * node_encoding
+            vertex_loss = nlog_prob.sum()
+
+            kl_loss = -0.5 * torch.sum(1 + logvar - mu**2 - logvar.exp())
+            loss = edge_loss + vertex_loss + self.beta * kl_loss
+            return {
+                'val/edge_loss': edge_loss,
+                'val/vertex_loss': vertex_loss,
+                'val/kl_loss': kl_loss,
+                'val_loss': loss}
+
+    def validation_end(self, outputs):
+        # OPTIONAL
+        with torch.no_grad():
+            loss_keys = ['val_loss', 'val/edge_loss',
+                         'val/vertex_loss', 'val/kl_loss']
+            metrics = {
+                key: torch.stack([x[key] for x in outputs]).mean() for key in loss_keys
+            }
+        return {'avg_val_loss': metrics['val_loss'], 'log': metrics}
 
     def configure_optimizers(self):
         # REQUIRED
@@ -206,9 +367,40 @@ class Dvae(pl.LightningModule):
     @pl.data_loader
     def val_dataloader(self):
         # OPTIONAL
-        return self.val_loader
+        return self.val_loader[0]
 
     @pl.data_loader
     def test_dataloader(self):
         # OPTIONAL
         return self.test_loader
+
+    def predict(self, X):
+        _, mu, logvar = self.encoder.predict(X)
+        z = self.reparamterize(mu, logvar)
+        X_hat = self.decoder.predict(z)
+        return X_hat
+
+    def model_eval(self, X, sample_num, decode_num):
+        with torch.no_grad():
+            _, mu, logvar = self.encoder.predict(X)
+            stack_mu = torch.stack([mu] * sample_num, dim=1)
+            stack_logvar = torch.stack([logvar] * sample_num, dim=1)
+            stack_z = self.reparamterize(stack_mu, stack_logvar)
+            batch_size, samples, hidden_size = stack_z.shape
+            assert samples == sample_num
+            sampled_z = stack_z.view(batch_size*sample_num, hidden_size)
+            gen_edges, gen_nodes = self.decoder.predict(sampled_z)
+
+            gen_edges = gen_edges.view(
+                batch_size, sample_num, *gen_edges.shape[1:])
+            gen_nodes = gen_nodes.view(
+                batch_size, sample_num, *gen_nodes.shape[1:])
+
+            true_edges, true_nodes = X['graph'], X['node_encoding']
+
+            recon_acc = reconstruction_accuracy(
+                true_nodes, true_edges, gen_nodes, gen_edges)
+
+            return {
+                'recon_acc': recon_acc
+            }
