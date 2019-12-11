@@ -48,69 +48,31 @@ class NASDataset(Dataset):
 
         # store 1-hot encoding for nodes in seq
         node_encoding = np.zeros((seq_len, node_types), dtype=int)
+        node_encoding[0, node_types - 2] = 1
+        node_encoding[-1, node_types - 1] = 1
+        dep_graph = np.zeros((seq_len, seq_len), dtype=int)
 
-        # capture input edges
-        dep_dict = {node_idx: set() for node_idx in range(1, seq_len-1)}
+        no_child_nodes = set(range(seq_len - 2))
+        for seq_idx, node_info in enumerate(x):
+            node_type = node_info[0]
+            shifted_idx = seq_idx + 1
+            # add 1 for SOS token
+            node_encoding[shifted_idx, node_type] = 1
 
-        # capture edges with successor except eos and sos node
-        is_successor = np.zeros((seq_len - 1))
-        is_successor[0] = 1
+            if seq_idx > 0:
+                parents = np.array(node_info[1:])
+                dep_graph[shifted_idx, 1: len(parents) + 1] = parents
+                if parents.sum() == 0:
+                    dep_graph[shifted_idx, 0] = 1
+                else:
+                    parent_idx = set(np.nonzero(parents)[0])
+                    no_child_nodes = no_child_nodes - parent_idx
+            # always connect last node in ENAS
+            dep_graph[shifted_idx, seq_idx] = 1
+        for seq_idx in no_child_nodes:
+            dep_graph[-1, seq_idx + 1] = 1
 
-        # dependency mask for easy computation
-        dep_graph = np.zeros((seq_len, seq_len))
-
-        # iterate over network
-        for index, node in enumerate(x):
-            for dep, val in enumerate(node[1:]):
-                if val == 0:
-                    continue
-                # make note of input edges
-                dep_dict[index + 1].add(dep + 1)
-
-        top_sort = list(toposort(dep_dict))
-        correct_node_order = [y for x in top_sort for y in sorted(x)]
-        old_to_new_index = {old: new + 1 for new,
-                            old in enumerate(correct_node_order)}
-        for old_index, new_index in old_to_new_index.items():
-            node = x[old_index - 1]
-
-            node_type = node[0]
-            # shift index by 1 as SOS node occupies 0th index
-            node_encoding[new_index, node_type] = 1
-
-            # make note of input edges
-            for dep, val in enumerate(node[1:]):
-                if val == 0:
-                    continue
-                # shift by 1 to account for SOS token
-                new_dep_index = old_to_new_index[dep + 1]
-
-                # make note of output edges
-                is_successor[new_dep_index] = 1
-
-                # update the dep graph
-                dep_graph[new_index, new_dep_index] = 1
-
-        # store encoding for first node
-        node_encoding[0, -2] = 1
-        # store encoding for last node
-        node_encoding[-1, -1] = 1
-
-        # tie all root nodes to SOS node
-        root_nodes = list(top_sort[0])
-        for node in root_nodes:
-            dep_graph[old_to_new_index[node], 0] = 1
-
-        # tie all end nodes to EOS node
-        no_successor_nodes = np.argwhere(is_successor == 0)
-        eos_graph_row = np.zeros((seq_len), dtype=int)
-        eos_graph_row[no_successor_nodes] = 1
-        dep_graph[-1, :] = eos_graph_row
-
-        dep_graph = torch.from_numpy(dep_graph).float()
-        node_encoding = torch.from_numpy(node_encoding).float()
-
-        return dep_graph, node_encoding
+        return torch.from_numpy(dep_graph).float(), torch.from_numpy(node_encoding).float()
 
     def __getitem__(self, index):
         item = self.samples.iloc[index]
