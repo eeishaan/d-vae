@@ -142,7 +142,7 @@ def main():
 
     print('Best val loss: {} | acc: {} at epoch {}'.format(
         best_val_loss, best_val_acc, best_epoch))
-    test_loss, test_acc = evaluate(best_model, test_loader)
+    test_loss, test_acc = evaluate(best_model, test_loader, device)
     print('Test | loss: {} | acc: {}'.format(
         test_loss, test_acc))
 
