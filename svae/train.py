@@ -45,8 +45,9 @@ def train(epoch, data_loader, model, optimizer, device):
         if i % 10 == 0:
             print('| epoch {:3d} | loss: {}'.format(epoch, total_loss / (i + 1)))
 
-    accuracy = 100 * count.item() / len(data_loader)
+    accuracy = 100 * count.item() / len(data_loader.dataset)
     print('|Train | Epoch: {:3d} | accuracy: {}'.format(epoch, accuracy))
+    avg_loss = total_loss / len(data_loader.dataset)
     return total_loss, accuracy
 
 
@@ -78,8 +79,8 @@ def evaluate(model, data_loader, device):
 
             total_loss += loss.item()
 
-    accuracy = 100 * count.item() / len(data_loader)
-    avg_loss = total_loss / (i * len(data_loader))
+    accuracy = 100 * count.item() / len(data_loader.dataset)
+    avg_loss = total_loss / len(data_loader.dataset)
     return avg_loss, accuracy
 
 
