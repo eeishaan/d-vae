@@ -109,7 +109,8 @@ def main():
     lr = args.lr
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    lr_schedule = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min')
+    lr_schedule = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, 'min', min_lr=1e-5)
 
     train_accs = []
     val_accs = []
