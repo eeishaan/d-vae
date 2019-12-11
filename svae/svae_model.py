@@ -67,8 +67,9 @@ class Decoder(nn.Module):
 
     def forward(self, z):
         h_0 = self.relu(self.fc_h0(z))
-        inp = z.new_zeros((z.shape[0], self.max_seq_len, self.hidden_size))
-        h_out, _ = self.gru_layer(inp, h_0.unsqueeze(0))
+        # inp = z.new_zeros((z.shape[0], self.max_seq_len, self.hidden_size))
+        inp = h_0.unsqueeze(1).expand(-1, self.max_seq_len - 1, -1)
+        h_out, _ = self.gru_layer(inp)
         type_scores = self.add_vertex(h_out)
         edge_scores = self.sigmoid(self.add_edges(h_out))
         return type_scores, edge_scores
