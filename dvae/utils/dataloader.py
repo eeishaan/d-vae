@@ -94,7 +94,7 @@ def get_dataloaders(batch_size, file_path):
     test_dataset = NASDataset(file_path, split='test')
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size,
-        pin_memory=True, shuffle=False)
+        pin_memory=True, shuffle=True)
     val_loader = DataLoader(
         val_dataset, batch_size=batch_size,
         pin_memory=True, shuffle=False),
