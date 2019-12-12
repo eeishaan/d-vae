@@ -387,7 +387,7 @@ class Dvae(pl.LightningModule):
         X_hat = self.decoder.predict(z)
         return X_hat
 
-    def model_eval(self, X, sample_num, decode_num):
+    def model_eval(self, X, sample_num, decode_num, is_stochastic=True):
         with torch.no_grad():
             _, mu, logvar = self.encoder.predict(X)
             stack_mu = torch.stack([mu] * sample_num, dim=1)
@@ -399,7 +399,8 @@ class Dvae(pl.LightningModule):
             sampled_z = stack_z.view(
                 batch_size*sample_num*decode_num, hidden_size)
 
-            gen_edges, gen_nodes = self.decoder.predict(sampled_z)
+            gen_edges, gen_nodes = self.decoder.predict(
+                sampled_z, is_stochastic)
             gen_edges = gen_edges.view(
                 batch_size, decode_num * sample_num, *gen_edges.shape[1:])
             gen_nodes = gen_nodes.view(
