@@ -141,9 +141,10 @@ class Svae(pl.LightningModule):
 
         edge_loss = self.bce_loss(gen_dep_graph, dep_matrix)
 
-        nlog_prob = -1 * \
-            self.log_softmax(gen_node_encoding) * node_encoding
-        vertex_loss = nlog_prob.sum()
+        vertex_loss = self.cross_entropy_loss(
+            gen_node_encoding.view(-1, self.node_type),
+            torch.argmax(
+                node_encoding.view(-1, self.node_type).to(dtype=torch.float), dim=1))
 
         kl_loss = -0.5 * torch.sum(1 + logvar - mu**2 - logvar.exp())
 
