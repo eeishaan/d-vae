@@ -259,7 +259,7 @@ class Svae(pl.LightningModule):
             correct = (true_graph.unsqueeze(1) ==
                        pred_graph).all(dim=-1).all(dim=-1)
 
-            acc = correct.sum().item() / (batch_size * samples)
+            acc = correct.sum().item() / (batch_size * decode_num * samples)
 
             return {
                 'recon_acc': acc
