@@ -96,15 +96,19 @@ class Svae(pl.LightningModule):
         return eps.mul(std).add_(mu)
 
     def _predict_from_logits(self, type_scores, edge_scores, is_stochastic=False):
+        type_scores = F.softmax(type_scores, dim=-1)
         if is_stochastic:
-            gen_node_types = torch.multinomial(type_scores, -1).squeeze(-1)
+            batch, seq_len, node_types = type_scores.shape
+            gen_node_types = torch.multinomial(
+                type_scores.view(-1, node_types), 1).view(batch, seq_len)
         else:
             gen_node_types = torch.argmax(type_scores, dim=-1)
         gen_node_encoding = F.one_hot(
             gen_node_types, num_classes=self.node_type).to(dtype=torch.float)
 
+        edge_scores = torch.sigmoid(edge_scores)
         if is_stochastic:
-            gen_dep_graph = torch.bernoulli(is_edge)
+            gen_dep_graph = torch.bernoulli(edge_scores)
         else:
             gen_dep_graph = torch.zeros_like(edge_scores)
             gen_dep_graph[edge_scores > 0.5] = 1
