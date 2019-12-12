@@ -108,10 +108,13 @@ class NASDataset(Dataset):
         }
 
 
-def get_dataloaders(batch_size, file_path, fmt=None):
-    train_dataset = NASDataset(file_path, split='train', fmt=fmt)
-    val_dataset = NASDataset(file_path, split='val', fmt=fmt)
-    test_dataset = NASDataset(file_path, split='test', fmt=fmt)
+def get_dataloaders(batch_size, file_path, fmt=None, task_type='enas'):
+    train_dataset = NASDataset(
+        file_path, split='train', fmt=fmt, task_type=task_type)
+    val_dataset = NASDataset(file_path, split='val',
+                             fmt=fmt, task_type=task_type)
+    test_dataset = NASDataset(file_path, split='test',
+                              fmt=fmt, task_type=task_type)
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size,
         pin_memory=True, shuffle=True)
