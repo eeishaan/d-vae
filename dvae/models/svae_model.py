@@ -97,7 +97,7 @@ class Svae(pl.LightningModule):
 
     def _predict_from_logits(self, type_scores, edge_scores, is_stochastic=False):
         if is_stochastic:
-            gen_node_types = torch.multinomial(gen_node_types, -1).squeeze(-1)
+            gen_node_types = torch.multinomial(type_scores, -1).squeeze(-1)
         else:
             gen_node_types = torch.argmax(type_scores, dim=-1)
         gen_node_encoding = F.one_hot(
