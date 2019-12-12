@@ -224,3 +224,31 @@ class Svae(pl.LightningModule):
     def test_dataloader(self):
         # OPTIONAL
         return self.test_loader
+
+    def model_eval(self, X, sample_num, decode_num):
+        with torch.no_grad():
+            true_graph = X['graph']
+            mu, logvar = self.encoder(true_graph)
+            stack_mu = torch.stack([mu] * sample_num, dim=1)
+            stack_logvar = torch.stack([logvar] * sample_num, dim=1)
+            stack_z = self.reparamterize(stack_mu, stack_logvar)
+            batch_size, samples, hidden_size = stack_z.shape
+            assert samples == sample_num
+            sampled_z = stack_z.view(batch_size*sample_num, hidden_size)
+            gen_node_encoding, gen_dep_graph = self.decoder(sampled_z)
+            gen_node_encoding, gen_dep_graph = self._predict_from_logits(
+                gen_node_encoding, gen_dep_graph)
+
+            pred_graph = torch.cat(
+                (gen_node_encoding, gen_dep_graph), dim=-1)
+            pred_graph = pred_graph.view(
+                batch_size, samples, *pred_graph.shape[1:])
+
+            correct = (true_graph.unsqueeze(1) ==
+                       pred_graph).all(dim=-1).all(dim=-1)
+
+            acc = correct.sum().item() / (batch_size * samples)
+
+            return {
+                'recon_acc': acc
+            }
