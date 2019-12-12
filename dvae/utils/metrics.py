@@ -18,13 +18,11 @@ def reconstruction_accuracy(true_encodings, true_deps, pred_encodings, pred_deps
     node_equality = (true_encodings.unsqueeze(1) == pred_encodings)
     # first check if node type is same then check if all nodes are in the
     # seq are same
-    node_equality = node_equality.all(dim=-1).all(dim=-1).unsqueeze(-1)
+    node_equality = node_equality.all(dim=-1).all(dim=-1)
 
     # check if correct nodes have correct edges
-    true_deps = true_deps.view(batch_size, -1).unsqueeze(1)
-    pred_deps = pred_deps.view(batch_size, sample_num, -1)
-    edge_equality = (true_deps == pred_deps) * node_equality
-    edge_equality = edge_equality.all(dim=-1)
+    edge_equality = (true_deps.unsqueeze(1) == pred_deps).all(
+        dim=-1).all(dim=-1) * node_equality
 
-    correct_graphs = edge_equality.sum()
+    correct_graphs = edge_equality.sum().item()
     return correct_graphs / (batch_size * sample_num)
