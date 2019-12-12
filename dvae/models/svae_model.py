@@ -95,13 +95,19 @@ class Svae(pl.LightningModule):
         eps = torch.randn_like(std)
         return eps.mul(std).add_(mu)
 
-    def _predict_from_logits(self, type_scores, edge_scores):
-        gen_node_types = torch.argmax(type_scores, dim=-1)
+    def _predict_from_logits(self, type_scores, edge_scores, is_stochastic=False):
+        if is_stochastic:
+            gen_node_types = torch.multinomial(gen_node_types, -1).squeeze(-1)
+        else:
+            gen_node_types = torch.argmax(type_scores, dim=-1)
         gen_node_encoding = F.one_hot(
             gen_node_types, num_classes=self.node_type).to(dtype=torch.float)
 
-        gen_dep_graph = torch.zeros_like(edge_scores)
-        gen_dep_graph[edge_scores > 0.5] = 1
+        if is_stochastic:
+            gen_dep_graph = torch.bernoulli(is_edge)
+        else:
+            gen_dep_graph = torch.zeros_like(edge_scores)
+            gen_dep_graph[edge_scores > 0.5] = 1
         return gen_node_encoding, gen_dep_graph
 
     def predict(self, X):
@@ -225,7 +231,7 @@ class Svae(pl.LightningModule):
         # OPTIONAL
         return self.test_loader
 
-    def model_eval(self, X, sample_num, decode_num):
+    def model_eval(self, X, sample_num, decode_num, is_stochastic=True):
         with torch.no_grad():
             true_graph = X['graph']
             mu, logvar = self.encoder(true_graph)
@@ -234,15 +240,17 @@ class Svae(pl.LightningModule):
             stack_z = self.reparamterize(stack_mu, stack_logvar)
             batch_size, samples, hidden_size = stack_z.shape
             assert samples == sample_num
-            sampled_z = stack_z.view(batch_size*sample_num, hidden_size)
+            stack_z = stack_z.repeat(1, decode_num, 1)
+            sampled_z = stack_z.view(
+                batch_size * sample_num * decode_num, hidden_size)
             gen_node_encoding, gen_dep_graph = self.decoder(sampled_z)
             gen_node_encoding, gen_dep_graph = self._predict_from_logits(
-                gen_node_encoding, gen_dep_graph)
+                gen_node_encoding, gen_dep_graph, is_stochastic=is_stochastic)
 
             pred_graph = torch.cat(
                 (gen_node_encoding, gen_dep_graph), dim=-1)
             pred_graph = pred_graph.view(
-                batch_size, samples, *pred_graph.shape[1:])
+                batch_size, decode_num * samples, *pred_graph.shape[1:])
 
             correct = (true_graph.unsqueeze(1) ==
                        pred_graph).all(dim=-1).all(dim=-1)
