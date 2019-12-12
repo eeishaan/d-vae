@@ -85,6 +85,8 @@ class Svae(pl.LightningModule):
         self.encoder = Encoder(self.node_type, self.max_seq_len)
         self.decoder = Decoder(self.node_type, self.max_seq_len)
         self.bce_loss = torch.nn.BCEWithLogitsLoss(reduction='sum')
+        self.log_softmax = torch.nn.LogSoftmax(
+            dim=2)
         self.cross_entropy_loss = torch.nn.CrossEntropyLoss(reduction='sum')
         self.beta = getattr(hparams, 'beta', 0.005)
 
@@ -139,10 +141,9 @@ class Svae(pl.LightningModule):
 
         edge_loss = self.bce_loss(gen_dep_graph, dep_matrix)
 
-        vertex_loss = self.cross_entropy_loss(
-            gen_node_encoding.view(-1, self.node_type),
-            torch.argmax(
-                node_encoding.view(-1, self.node_type).to(dtype=torch.float), dim=1))
+        nlog_prob = -1 * \
+            self.log_softmax(gen_node_encoding) * node_encoding
+        vertex_loss = nlog_prob.sum()
 
         kl_loss = -0.5 * torch.sum(1 + logvar - mu**2 - logvar.exp())
 
