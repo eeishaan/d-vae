@@ -11,16 +11,21 @@ from dvae.utils.metrics import reconstruction_accuracy
 
 
 class Encoder(nn.Module):
-    def __init__(self, num_classes=8, hidden_state_size=501, latent_space_dim=56, mod=None, is_bidirectional=False):
+    def __init__(self, num_classes, seq_len, hidden_state_size=501, latent_space_dim=56, mod=None, is_bidirectional=False):
         super(Encoder, self).__init__()
-        self.seq_len = 8
+        self.seq_len = seq_len
         self.hidden_state_size = hidden_state_size
+
+        gate_map_input_len = hidden_state_size + self.seq_len
+        if mod == 'bn':
+            gate_map_input_len = num_classes
+
         self.gating_network = nn.Sequential(
-            nn.Linear(hidden_state_size + self.seq_len, hidden_state_size),
+            nn.Linear(gate_map_input_len, hidden_state_size),
             nn.Sigmoid()
         )
         self.mapping_network = nn.Linear(
-            hidden_state_size + self.seq_len, hidden_state_size)
+            gate_map_input_len, hidden_state_size)
         self.gru = nn.GRUCell(num_classes, hidden_state_size)
 
         self.lin11 = nn.Linear(hidden_state_size, latent_space_dim)
@@ -31,9 +36,9 @@ class Encoder(nn.Module):
         if is_bidirectional:
             self.back_gru = nn.GRUCell(num_classes, hidden_state_size)
             self.back_mapping_network = nn.Linear(
-                hidden_state_size + self.seq_len, hidden_state_size)
+                gate_map_input_len, hidden_state_size)
             self.back_gating_network = nn.Sequential(
-                nn.Linear(hidden_state_size + self.seq_len, hidden_state_size),
+                nn.Linear(gate_map_input_len, hidden_state_size),
                 nn.Sigmoid()
             )
             self.lin01 = nn.Linear(2*hidden_state_size, hidden_state_size)
@@ -44,18 +49,22 @@ class Encoder(nn.Module):
         device = dep_graph.device
         node_hidden_state = torch.zeros(
             batch_size, seq_len, self.hidden_state_size, device=device)
-        ordering = torch.stack(
-            [torch.eye(self.seq_len, device=device)] * batch_size)
-        assert ordering.shape == (batch_size, seq_len, seq_len)
+        if self.mod is None:
+            ordering = torch.stack(
+                [torch.eye(self.seq_len, device=device)] * batch_size)
+            assert ordering.shape == (batch_size, seq_len, seq_len)
         for index in range(seq_len):
             # TODO: add modification for NAS and bayesian task here
 
             ########## compute h_in ##########
             ancestor_mask = dep_graph[:, index].unsqueeze(-1)
 
-            # masking is a hack to avoid in-place update which break gradient computation
-            masked_hidden_state = torch.cat(
-                [node_hidden_state, ordering], dim=-1) * ancestor_mask
+            if self.mod is None:
+                # masking is a hack to avoid in-place update which break gradient computation
+                masked_hidden_state = torch.cat(
+                    [node_hidden_state, ordering], dim=-1) * ancestor_mask
+            elif self.mod == 'bn':
+                masked_hidden_state = node_encoding * ancestor_mask
 
             # broadcast mask here to zero out non-ancestor nodes
             h_in = self.gating_network(masked_hidden_state) * \
@@ -79,8 +88,12 @@ class Encoder(nn.Module):
 
                 ########## compute h_in ##########
                 ancestor_mask = back_dep_graph[:, index].unsqueeze(-1)
-                masked_hidden_state = torch.cat(
-                    [back_node_hidden_state, ordering], dim=2) * ancestor_mask
+
+                if self.mod is None:
+                    masked_hidden_state = torch.cat(
+                        [back_node_hidden_state, ordering], dim=2) * ancestor_mask
+                elif self.mod == 'bn':
+                    masked_hidden_state = node_encoding * ancestor_mask
 
                 # broadcast mask here to zero out non-ancestor nodes
                 h_in = self.back_gating_network(masked_hidden_state) * \
@@ -107,12 +120,16 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, num_classes=8, hidden_state_size=501, latent_space_dim=56, mod=None):
+    def __init__(self, num_classes, seq_len, hidden_state_size=501, latent_space_dim=56, mod=None):
         super(Decoder, self).__init__()
-        self.seq_len = 8
-
+        self.seq_len = seq_len
         self.hidden_state_size = hidden_state_size
         self.num_classes = num_classes
+
+        gate_map_input_len = hidden_state_size + self.seq_len
+        if mod == 'bn':
+            gate_map_input_len = num_classes
+
         self.lin1 = nn.Linear(latent_space_dim, hidden_state_size)
         self.add_vertex = nn.Sequential(
             nn.Linear(hidden_state_size, 2*hidden_state_size),
@@ -125,11 +142,11 @@ class Decoder(nn.Module):
             nn.Linear(4*hidden_state_size, 1),
         )
         self.gating_network = nn.Sequential(
-            nn.Linear(hidden_state_size + self.seq_len, hidden_state_size),
+            nn.Linear(gate_map_input_len, hidden_state_size),
             nn.Sigmoid()
         )
         self.mapping_network = nn.Linear(
-            hidden_state_size + self.seq_len, hidden_state_size)
+            gate_map_input_len, hidden_state_size)
         self.gru = nn.GRUCell(num_classes, hidden_state_size)
         self.mod = mod
 
@@ -144,9 +161,10 @@ class Decoder(nn.Module):
         node_hidden_state = torch.zeros(
             batch_size, seq_len, self.hidden_state_size, device=device)
 
-        ordering = torch.stack(
-            [torch.eye(self.seq_len, device=device)] * batch_size)
-        assert ordering.shape == (batch_size, seq_len, seq_len)
+        if self.mod is None:
+            ordering = torch.stack(
+                [torch.eye(self.seq_len, device=device)] * batch_size)
+            assert ordering.shape == (batch_size, seq_len, seq_len)
 
         graph_state = self.lin1(z)
 
@@ -178,9 +196,12 @@ class Decoder(nn.Module):
                 ancestors_mask = ancestors * ancestors_mask
                 ancestors_mask.unsqueeze_(-1)
 
-                # masking is a hack to avoid in-place update which break gradient computation
-                masked_hidden_state = torch.cat(
-                    [node_hidden_state, ordering], dim=-1) * ancestors_mask
+                if self.mod is None:
+                    # masking is a hack to avoid in-place update which break gradient computation
+                    masked_hidden_state = torch.cat(
+                        [node_hidden_state, ordering], dim=-1) * ancestors_mask
+                elif self.mod == 'bn':
+                    masked_hidden_state = node_encoding * ancestors_mask
 
                 h_in = self.gating_network(masked_hidden_state) * \
                     self.mapping_network(masked_hidden_state) * \
@@ -194,7 +215,15 @@ class Decoder(nn.Module):
                         (batch_size, self.hidden_state_size), hv.shape)
                 node_hidden_state[:, index] = hv
             node_hidden_state[:, index] = hv
-            graph_state = hv
+
+            if self.mod == 'bn':
+                if index == 0:
+                    graph_state = hv
+                else:
+                    graph_state = graph_state + hv
+            else:
+                graph_state = hv
+
         return gen_dep_graph, gen_node_encoding
 
     def predict(self, z, is_stochastic=False):
@@ -203,11 +232,12 @@ class Decoder(nn.Module):
         batch_size, _ = z.shape
         node_hidden_state = []
         graph_state = self.lin1(z)
-        seq_len = 8
+        seq_len = self.seq_len
         device = z.device
-        ordering = torch.stack(
-            [torch.eye(self.seq_len, device=device)] * batch_size)
-        assert ordering.shape == (batch_size, seq_len, seq_len)
+        if self.mod is None:
+            ordering = torch.stack(
+                [torch.eye(self.seq_len, device=device)] * batch_size)
+            assert ordering.shape == (batch_size, seq_len, seq_len)
 
         index = 0
         while True:
@@ -249,10 +279,15 @@ class Decoder(nn.Module):
                 # TODO: add modification for NAS and bayesian task here
                 ######### compute h_in #########
 
-                c_node_hidden_state = torch.stack(
-                    node_hidden_state).permute(1, 0, 2)
-                c_node_hidden_state = torch.cat(
-                    [c_node_hidden_state, ordering[:, :index]], dim=-1)
+                if self.mod is None:
+                    c_node_hidden_state = torch.stack(
+                        node_hidden_state).permute(1, 0, 2)
+                    c_node_hidden_state = torch.cat(
+                        [c_node_hidden_state, ordering[:, :index]], dim=-1)
+                elif self.mod == 'bn':
+                    c_node_hidden_state = torch.stack(
+                        gen_nodes[:-1]).permute(1, 0, 2)
+
                 h_in = self.gating_network(c_node_hidden_state) * \
                     self.mapping_network(c_node_hidden_state) * \
                     possible_edges.unsqueeze(-1)
@@ -286,15 +321,18 @@ class Dvae(pl.LightningModule):
         """
         super(Dvae, self).__init__()
         self.hparams = hparams
+        task_type = getattr(hparams, 'task_type', 'enas')
         self.train_loader, self.val_loader, self.test_loader = get_dataloaders(
-            hparams.batch_size, hparams.dataset_file) if hparams.dataset_file else [None]*3
-        self.encoder = Encoder(
-            mod=hparams.mod, is_bidirectional=hparams.bidirectional)
-        self.decoder = Decoder(mod=hparams.mod)
+            hparams.batch_size, hparams.dataset_file, task_type=task_type) if hparams.dataset_file else [None]*3
+        self.num_classes = getattr(hparams, 'num_classes', 8)
+        self.max_seq = getattr(hparams, 'max_seq', 8)
+        self.encoder = Encoder(num_classes=self.num_classes, seq_len=self.max_seq,
+                               mod=hparams.mod, is_bidirectional=hparams.bidirectional)
+        self.decoder = Decoder(num_classes=self.num_classes,
+                               seq_len=self.max_seq, mod=hparams.mod)
         self.bce_loss = torch.nn.BCEWithLogitsLoss(reduction='sum')
         self.log_softmax = torch.nn.LogSoftmax(
             dim=2)  # (reduction='sum')
-        self.num_classes = 8
         self.mod = hparams.mod
         self.beta = getattr(hparams, 'beta', 0.005)
 
