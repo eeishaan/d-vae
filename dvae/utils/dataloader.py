@@ -9,10 +9,22 @@ from torch.utils.data import DataLoader, Dataset
 
 class NASDataset(Dataset):
 
-    def __init__(self, file_path, split='train', fmt=None):
+    def __init__(self, file_path, split='train', fmt=None, task_type='enas'):
         super(NASDataset, self).__init__()
         self.file_path = file_path
         self.fmt = fmt
+        self.task_type = task_type
+        if task_type == 'enas':
+            node_types = 6
+            seq_len = 6
+        elif task_type == 'bn':
+            node_types = 8
+            seq_len = 8
+        else:
+            raise NotImplementedError
+        self.node_types = node_types
+        self.seq_len = seq_len
+
         # load the file
         df = pd.read_csv(
             self.file_path,
@@ -42,10 +54,10 @@ class NASDataset(Dataset):
         correct_json = x + ']]'
         return json.loads(correct_json)
 
-    @classmethod
-    def _process_seq(cls, x):
-        node_types = 6 + 2  # 1 for EOS token, 1 for SOS token
-        seq_len = len(x) + 2  # 1 for EOS token, 1 for SOS token
+    def _process_seq(self, x):
+        node_types = self.node_types + 2  # 1 for EOS token, 1 for SOS token
+        assert len(x) == self.seq_len
+        seq_len = self.seq_len + 2  # 1 for EOS token, 1 for SOS token
 
         # store 1-hot encoding for nodes in seq
         node_encoding = np.zeros((seq_len, node_types), dtype=int)
@@ -60,16 +72,16 @@ class NASDataset(Dataset):
             # add 1 for SOS token
             node_encoding[shifted_idx, node_type] = 1
 
-            if seq_idx > 0:
-                parents = np.array(node_info[1:])
-                dep_graph[shifted_idx, 1: len(parents) + 1] = parents
-                if parents.sum() == 0:
-                    dep_graph[shifted_idx, 0] = 1
-                else:
-                    parent_idx = set(np.nonzero(parents)[0])
-                    no_child_nodes = no_child_nodes - parent_idx
-            # always connect last node in ENAS
-            dep_graph[shifted_idx, seq_idx] = 1
+            parents = np.array(node_info[1:])
+            dep_graph[shifted_idx, 1: len(parents) + 1] = parents
+            if parents.sum() == 0:
+                dep_graph[shifted_idx, 0] = 1
+            else:
+                parent_idx = set(np.nonzero(parents)[0])
+                no_child_nodes = no_child_nodes - parent_idx
+            if self.task_type == 'enas':
+                # always connect last node in ENAS
+                dep_graph[shifted_idx, seq_idx] = 1
         for seq_idx in no_child_nodes:
             dep_graph[-1, seq_idx + 1] = 1
 
@@ -79,7 +91,7 @@ class NASDataset(Dataset):
         item = self.samples.iloc[index]
 
         seq = NASDataset._add_delim(item[0])
-        seq, node_encoding = NASDataset._process_seq(seq)
+        seq, node_encoding = self._process_seq(seq)
         acc = float(item[1])
         if self.fmt == 'str':
             seq = seq[1:, :].to(dtype=torch.float)  #
