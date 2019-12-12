@@ -124,11 +124,10 @@ class Svae(pl.LightningModule):
                 gen_node_encoding, gen_dep_graph)
         pred_dep_graph = torch.cat(
             (gen_node_encoding, gen_dep_graph), dim=-1)
-        is_equal = torch.eq(pred_dep_graph, true_dep_graph)
-        l = is_equal.shape[-1] + is_equal.shape[-2]
-        is_equal = torch.sum(torch.sum(is_equal, dim=-1), dim=-1)
-        count = torch.sum(is_equal == l).to(dtype=torch.float)
-        return count
+        is_equal = torch.eq(pred_dep_graph, true_dep_graph).all(
+            dim=-1).all(dim=-1)
+        acc = is_equal.sum() / is_equal.shape[0]
+        return acc.float()
 
     def training_step(self, batch, batch_nb):
         # REQUIRED
