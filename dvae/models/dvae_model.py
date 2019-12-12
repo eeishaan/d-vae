@@ -197,7 +197,7 @@ class Decoder(nn.Module):
             graph_state = hv
         return gen_dep_graph, gen_node_encoding
 
-    def predict(self, z):
+    def predict(self, z, is_stochastic=False):
         gen_edges = []
         gen_nodes = []
         batch_size, _ = z.shape
@@ -216,7 +216,10 @@ class Decoder(nn.Module):
             # sample node type
             new_node_type = F.softmax(
                 self.add_vertex(graph_state), dim=1)
-            new_node_type = new_node_type.argmax(dim=1)
+            if is_stochastic:
+                new_node_type = torch.multinomial(new_node_type, 1).view(-1)
+            else:
+                new_node_type = new_node_type.argmax(dim=1)
             new_node_encoding = F.one_hot(
                 new_node_type, num_classes=self.num_classes).float()
 
@@ -236,8 +239,11 @@ class Decoder(nn.Module):
                 hidden_j = node_hidden_state[v_j]
                 is_edge = self.add_edge(torch.cat([hv, hidden_j], dim=1))
                 is_edge = F.sigmoid(is_edge)
-                is_edge[is_edge >= 0.5] = 1
-                is_edge[is_edge < 0.5] = 0
+                if is_stochastic:
+                    is_edge = torch.bernoulli(is_edge)
+                else:
+                    is_edge[is_edge >= 0.5] = 1
+                    is_edge[is_edge < 0.5] = 0
                 possible_edges[:, v_j] = is_edge.view(-1)
 
                 # TODO: add modification for NAS and bayesian task here
@@ -380,7 +386,7 @@ class Dvae(pl.LightningModule):
         X_hat = self.decoder.predict(z)
         return X_hat
 
-    def model_eval(self, X, sample_num, decode_num):
+    def model_eval(self, X, sample_num, decode_num, is_stochastic=True):
         with torch.no_grad():
             _, mu, logvar = self.encoder.predict(X)
             stack_mu = torch.stack([mu] * sample_num, dim=1)
@@ -388,13 +394,16 @@ class Dvae(pl.LightningModule):
             stack_z = self.reparamterize(stack_mu, stack_logvar)
             batch_size, samples, hidden_size = stack_z.shape
             assert samples == sample_num
-            sampled_z = stack_z.view(batch_size*sample_num, hidden_size)
-            gen_edges, gen_nodes = self.decoder.predict(sampled_z)
+            stack_z = stack_z.repeat(1, decode_num, 1)
+            sampled_z = stack_z.view(
+                batch_size*sample_num*decode_num, hidden_size)
 
+            gen_edges, gen_nodes = self.decoder.predict(
+                sampled_z, is_stochastic)
             gen_edges = gen_edges.view(
-                batch_size, sample_num, *gen_edges.shape[1:])
+                batch_size, decode_num * sample_num, *gen_edges.shape[1:])
             gen_nodes = gen_nodes.view(
-                batch_size, sample_num, *gen_nodes.shape[1:])
+                batch_size, decode_num * sample_num, *gen_nodes.shape[1:])
 
             true_edges, true_nodes = X['graph'], X['node_encoding']
 
