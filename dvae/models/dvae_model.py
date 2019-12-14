@@ -11,7 +11,10 @@ from dvae.utils.metrics import reconstruction_accuracy
 
 
 class Encoder(nn.Module):
-    def __init__(self, num_classes, seq_len, hidden_state_size=501, latent_space_dim=56, mod=None, is_bidirectional=False):
+    def __init__(self,
+                 num_classes, seq_len, hidden_state_size=501,
+                 latent_space_dim=56, mod=None, is_bidirectional=False,
+                 mapping_network=None, gating_network=None):
         super(Encoder, self).__init__()
         self.seq_len = seq_len
         self.hidden_state_size = hidden_state_size
@@ -20,12 +23,16 @@ class Encoder(nn.Module):
         if mod == 'bn':
             gate_map_input_len = num_classes
 
-        self.gating_network = nn.Sequential(
-            nn.Linear(gate_map_input_len, hidden_state_size),
-            nn.Sigmoid()
-        )
-        self.mapping_network = nn.Linear(
-            gate_map_input_len, hidden_state_size)
+        self.gating_network = gating_network
+        if gating_network is None:
+            self.gating_network = nn.Sequential(
+                nn.Linear(gate_map_input_len, hidden_state_size),
+                nn.Sigmoid()
+            )
+        self.mapping_network = mapping_network
+        if mapping_network is None:
+            self.mapping_network = nn.Linear(
+                gate_map_input_len, hidden_state_size)
         self.gru = nn.GRUCell(num_classes, hidden_state_size)
 
         self.lin11 = nn.Linear(hidden_state_size, latent_space_dim)
@@ -120,7 +127,10 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, num_classes, seq_len, hidden_state_size=501, latent_space_dim=56, mod=None):
+    def __init__(self,
+                 num_classes, seq_len, hidden_state_size=501,
+                 latent_space_dim=56, mod=None,
+                 mapping_network=None, gating_network=None):
         super(Decoder, self).__init__()
         self.seq_len = seq_len
         self.hidden_state_size = hidden_state_size
@@ -141,12 +151,18 @@ class Decoder(nn.Module):
             nn.ReLU(),
             nn.Linear(4*hidden_state_size, 1),
         )
-        self.gating_network = nn.Sequential(
-            nn.Linear(gate_map_input_len, hidden_state_size),
-            nn.Sigmoid()
-        )
-        self.mapping_network = nn.Linear(
-            gate_map_input_len, hidden_state_size)
+
+        self.gating_network = gating_network
+        if gating_network is None:
+            self.gating_network = nn.Sequential(
+                nn.Linear(gate_map_input_len, hidden_state_size),
+                nn.Sigmoid()
+            )
+        self.mapping_network = mapping_network
+        if mapping_network is None:
+            self.mapping_network = nn.Linear(
+                gate_map_input_len, hidden_state_size)
+
         self.gru = nn.GRUCell(num_classes, hidden_state_size)
         self.mod = mod
 
@@ -339,14 +355,34 @@ class Dvae(pl.LightningModule):
             hparams.batch_size, hparams.dataset_file, task_type=task_type) if hparams.dataset_file else [None]*3
         self.num_classes = getattr(hparams, 'num_classes', 8)
         self.max_seq = getattr(hparams, 'max_seq', 8)
-        self.encoder = Encoder(num_classes=self.num_classes, seq_len=self.max_seq,
-                               mod=hparams.mod, is_bidirectional=hparams.bidirectional)
-        self.decoder = Decoder(num_classes=self.num_classes,
-                               seq_len=self.max_seq, mod=hparams.mod)
+        self.hidden_state_size = 501
+        self.mod = hparams.mod
+        if getattr(hparams, 'same_mapper_gater', False):
+            gate_map_input_len = self.hidden_state_size + self.max_seq
+            if self.mod == 'bn':
+                gate_map_input_len = self.num_classes
+            self.gating_network = nn.Sequential(
+                nn.Linear(gate_map_input_len, self.hidden_state_size),
+                nn.Sigmoid()
+            )
+            self.mapping_network = nn.Linear(
+                gate_map_input_len, self.hidden_state_size)
+            self.encoder = Encoder(num_classes=self.num_classes, seq_len=self.max_seq,
+                                   hidden_state_size=self.hidden_state_size,
+                                   mod=self.mod, is_bidirectional=hparams.bidirectional,
+                                   mapping_network=self.mapping_network, gating_network=self.gating_network)
+            self.decoder = Decoder(num_classes=self.num_classes,
+                                   hidden_state_size=self.hidden_state_size,
+                                   seq_len=self.max_seq, mod=hparams.mod,
+                                   mapping_network=self.mapping_network, gating_network=self.gating_network)
+        else:
+            self.encoder = Encoder(num_classes=self.num_classes, seq_len=self.max_seq,
+                                   mod=hparams.mod, is_bidirectional=hparams.bidirectional)
+            self.decoder = Decoder(num_classes=self.num_classes,
+                                   seq_len=self.max_seq, mod=hparams.mod)
         self.bce_loss = torch.nn.BCEWithLogitsLoss(reduction='sum')
         self.log_softmax = torch.nn.LogSoftmax(
             dim=2)  # (reduction='sum')
-        self.mod = hparams.mod
         self.beta = getattr(hparams, 'beta', 0.005)
 
     def reparamterize(self, mu, logvar):
