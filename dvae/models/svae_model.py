@@ -247,7 +247,7 @@ class Svae(pl.LightningModule):
 
     def configure_optimizers(self):
         # REQUIRED
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-4)
         lr_schedule = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, min_lr=1e-6)
         return [optimizer], [lr_schedule]
 
