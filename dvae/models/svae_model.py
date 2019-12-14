@@ -78,10 +78,11 @@ class Svae(pl.LightningModule):
     def __init__(self, hparams):
         super(Svae, self).__init__()
         self.hparams = hparams
+        task_type = getattr(hparams, 'task_type', 'enas')
         self.train_loader, self.val_loader, self.test_loader = get_dataloaders(
-            hparams.batch_size, hparams.dataset_file,  fmt='str') if hparams.dataset_file else [None]*3
-        self.node_type = 8
-        self.max_seq_len = 8
+            hparams.batch_size, hparams.dataset_file,  fmt='str', task_type=task_type) if hparams.dataset_file else [None]*3
+        self.node_type = getattr(hparams, 'num_classes', 8)
+        self.max_seq_len = getattr(hparams, 'max_seq', 8)
         self.encoder = Encoder(self.node_type, self.max_seq_len)
         self.decoder = Decoder(self.node_type, self.max_seq_len)
         self.bce_loss = torch.nn.BCEWithLogitsLoss(reduction='sum')
