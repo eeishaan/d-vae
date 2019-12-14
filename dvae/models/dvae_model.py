@@ -146,11 +146,20 @@ class Decoder(nn.Module):
             nn.ReLU(),
             nn.Linear(2*hidden_state_size, num_classes),
         )
-        self.add_edge = nn.Sequential(
-            nn.Linear(2*hidden_state_size, 4*hidden_state_size),
-            nn.ReLU(),
-            nn.Linear(4*hidden_state_size, 1),
-        )
+        if mod == 'bn':
+            self.add_edge = nn.Sequential(
+                nn.Linear(3*hidden_state_size, 6*hidden_state_size),
+                nn.ReLU(),
+                nn.Linear(6*hidden_state_size, 1),
+            )
+        elif mod is None:
+            self.add_edge = nn.Sequential(
+                nn.Linear(2*hidden_state_size, 4*hidden_state_size),
+                nn.ReLU(),
+                nn.Linear(4*hidden_state_size, 1),
+            )
+        else:
+            raise NotImplementedError
 
         self.gating_network = gating_network
         if gating_network is None:
@@ -182,8 +191,8 @@ class Decoder(nn.Module):
                 [torch.eye(self.seq_len, device=device)] * batch_size)
             assert ordering.shape == (batch_size, seq_len, seq_len)
 
-        graph_state = self.lin1(z)
-
+        h_0 = self.lin1(z)
+        graph_state = h_0
         for index in range(seq_len):
 
             # sample node type
@@ -192,7 +201,7 @@ class Decoder(nn.Module):
 
             # compute initial hidden states
             if index == 0:
-                h_in = graph_state
+                h_in = h_0
                 hv = self.gru(node_encoding[:, index], h_in)
             else:
                 hv = self.gru(node_encoding[:, index])
@@ -200,7 +209,13 @@ class Decoder(nn.Module):
             # sample edges
             for v_j in range(index-1, -1, -1):
                 hidden_j = node_hidden_state[:, v_j]
-                is_edge = self.add_edge(torch.cat([hv, hidden_j], dim=1))
+                if self.mod == 'bn':
+                    add_edge_input = torch.cat([hv, hidden_j, h_0], dim=1)
+                elif self.mod is None:
+                    add_edge_input = torch.cat([hv, hidden_j], dim=1)
+                else:
+                    raise NotImplementedError
+                is_edge = self.add_edge(add_edge_input)
                 gen_dep_graph[:, index, v_j] = is_edge.view(-1)
 
                 # TODO: add modification for NAS and bayesian task here
@@ -250,7 +265,8 @@ class Decoder(nn.Module):
         gen_nodes = []
         batch_size, _ = z.shape
         node_hidden_state = []
-        graph_state = self.lin1(z)
+        h_0 = self.lin1(z)
+        graph_state = h_0
         seq_len = self.seq_len
         device = z.device
         if self.mod is None:
@@ -276,7 +292,7 @@ class Decoder(nn.Module):
 
             # compute initial hidden states
             if index == 0:
-                h_in = graph_state
+                h_in = h_0
                 hv = self.gru(new_node_encoding, h_in)
             else:
                 hv = self.gru(new_node_encoding)
@@ -286,7 +302,13 @@ class Decoder(nn.Module):
             # sample edges
             for v_j in range(index-1, -1, -1):
                 hidden_j = node_hidden_state[v_j]
-                is_edge = self.add_edge(torch.cat([hv, hidden_j], dim=1))
+                if self.mod == 'bn':
+                    add_edge_input = torch.cat([hv, hidden_j, h_0], dim=1)
+                elif self.mod is None:
+                    add_edge_input = torch.cat([hv, hidden_j], dim=1)
+                else:
+                    raise NotImplementedError
+                is_edge = self.add_edge(add_edge_input)
                 is_edge = F.sigmoid(is_edge)
                 if is_stochastic:
                     is_edge = torch.bernoulli(is_edge)
