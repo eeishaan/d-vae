@@ -30,12 +30,12 @@ class Encoder(nn.Module):
         self.fc_var = nn.Linear(hidden_size, latent_dim)
 
         if self.bidir:
-            self.hg_unify = nn.Linear(self.hs * 2, self.hs)
+            self.hg_unify = nn.Linear(self.hidden_size * 2, self.hidden_size)
 
     def forward(self, x):
         _, h_n = self.gru_layer(x)
         # h_n size is (num_directions=2, batch, hidden_size):
-        h_n = h_n.transpose(1, 0, 2)
+        h_n = torch.transpose(h_n, 0, 1).contiguous()
         h_n = h_n.view(h_n.shape[0], -1)
         if self.bidir:
             h_n = self.hg_unify(h_n)
@@ -92,7 +92,7 @@ class Svae(pl.LightningModule):
         self.max_seq_len = 8
         self.bidir = self.hparams.bidirectional
 
-        self.encoder = Encoder(self.node_type, self.max_seq_len, self.bidir)
+        self.encoder = Encoder(self.node_type, self.max_seq_len, bidir=self.bidir)
         self.decoder = Decoder(self.node_type, self.max_seq_len)
 
         self.bce_loss = torch.nn.BCEWithLogitsLoss(reduction="sum")
@@ -248,7 +248,7 @@ class Svae(pl.LightningModule):
 
     def configure_optimizers(self):
         # REQUIRED
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-4)
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
         lr_schedule = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, min_lr=1e-6)
         return [optimizer], [lr_schedule]
 
