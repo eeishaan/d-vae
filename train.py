@@ -10,6 +10,13 @@ from dvae.models.svae_model import Svae
 
 # hparams = {
 #     'batch_size': BATCH_SIZE,
+#     'dataset_file': os.path.join(DATA_DIR, 'final_structures6.txt'),
+#     'mod': None,
+#     'beta': 0.005,
+#     'bidirectional': True
+# }
+# hparams = {
+#     'batch_size': BATCH_SIZE,
 #     'dataset_file': os.path.join(DATA_DIR, 'asia_200k.txt'),
 #     'mod': 'bn',
 #     'beta': 0.005,
