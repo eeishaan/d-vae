@@ -202,7 +202,8 @@ class Decoder(nn.Module):
                         [node_hidden_state, ordering], dim=-1) * ancestors_mask
                 elif self.mod == 'bn':
                     masked_hidden_state = node_encoding * ancestors_mask
-
+                else:
+                    raise NotImplementedError
                 h_in = self.gating_network(masked_hidden_state) * \
                     self.mapping_network(masked_hidden_state) * \
                     ancestors_mask
@@ -221,8 +222,10 @@ class Decoder(nn.Module):
                     graph_state = hv
                 else:
                     graph_state = graph_state + hv
-            else:
+            elif self.mod is None:
                 graph_state = hv
+            else:
+                raise NotImplementedError
 
         return gen_dep_graph, gen_node_encoding
 
@@ -301,7 +304,17 @@ class Decoder(nn.Module):
                         (batch_size, self.hidden_state_size), hv.shape)
             gen_edges.append(possible_edges)
             node_hidden_state.append(hv)
-            graph_state = hv
+
+            if self.mod == 'bn':
+                if index == 0:
+                    graph_state = hv
+                else:
+                    graph_state = graph_state + hv
+            elif self.mod is None:
+                graph_state = hv
+            else:
+                raise NotImplementedError
+
             index += 1
         res_gen_edges = torch.zeros(
             batch_size, seq_len, seq_len, device=device)
