@@ -299,6 +299,8 @@ class Dvae(pl.LightningModule):
         self.beta = getattr(hparams, 'beta', 0.005)
 
     def reparamterize(self, mu, logvar):
+        if self.hparams.sgp:
+            return mu
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
         return eps.mul(std).add_(mu)
