@@ -35,7 +35,8 @@ class Encoder(nn.Module):
     def forward(self, x):
         _, h_n = self.gru_layer(x)
         # h_n size is (num_directions=2, batch, hidden_size):
-        h_n = h_n.view(h_n.shape[1], -1)
+        h_n = h_n.transpose(1, 0, 2)
+        h_n = h_n.view(h_n.shape[0], -1)
         if self.bidir:
             h_n = self.hg_unify(h_n)
         mu = self.fc_mu(h_n)
