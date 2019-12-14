@@ -114,4 +114,4 @@ if __name__ == '__main__':
                            has_output=True, output_size=1)
 
     ### start training
-    train(args, dataset_loader, rnn, output)
+    train(args, dataset_loader, rnn, output) 
