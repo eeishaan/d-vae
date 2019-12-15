@@ -117,7 +117,7 @@ def train(args, dataset_train, rnn, output):
         time_end = tm.time()
         time_all[epoch - 1] = time_end - time_start
         # test
-        if epoch % args.epochs_test == 0 and epoch>=args.epochs_test_start:
+        if epoch>=args.epochs_test_start:
             for sample_time in range(1,4):
                 G_pred = []
                 while len(G_pred)<args.test_total_size:
