@@ -67,7 +67,7 @@ def train_mlp_epoch(epoch, args, rnn, output, data_loader,
         optimizer_rnn.step()
         scheduler_output.step()
         scheduler_rnn.step()
-        if epoch % args.epochs_log==0 and batch_idx==0: # only output first batch's statistics
+        if batch_idx==0: # only output first batch's statistics
             print('Epoch: {}/{}, train loss: {:.6f}, graph type: {}, num_layer: {}, hidden: {}'.format(
                 epoch, args.epochs,loss.data.item(), args.graph_type, args.num_layers, args.hidden_size_rnn))
         # logging
