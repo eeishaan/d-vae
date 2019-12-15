@@ -298,7 +298,7 @@ class Decoder(nn.Module):
                 hv = self.gru(new_node_encoding)
 
             possible_edges = torch.zeros(
-                batch_size, max(0, index), dtype=torch.float)
+                batch_size, max(0, index), dtype=torch.float, device=device)
             # sample edges
             for v_j in range(index-1, -1, -1):
                 hidden_j = node_hidden_state[v_j]
