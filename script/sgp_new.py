@@ -41,9 +41,9 @@ def eval(model, likelihood, test_x, test_y, split="val"):
         ), gpytorch.settings.fast_pred_var():
             preds = model(test_x)
             print(type(preds))
-    print("{} MAE: {}".format(split, torch.mean(torch.abs(preds.mean - test_y))))
-    mse = (preds - test_y).norm().item()
-    print("{} MSE: {}".format(split, mse))
+    MAE = torch.mean(torch.abs(preds.mean - test_y))
+    print("{} MAE: {}".format(split, MAE))
+    return MAE
 
 
 def normalize_data(y, mean, std):
@@ -106,12 +106,13 @@ def main():
     model = GPRegressionModel(X_train, y_train, likelihood).to(device=device)
 
     # Use the adam optimizer
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
 
     # "Loss" for GPs - the marginal log likelihood
     mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
 
     epochs = 1800
+    best_mae = float("inf")
     for i in range(epochs):
         model.train()
         likelihood.train()
@@ -126,7 +127,19 @@ def main():
         optimizer.step()
 
         print("Iter %d/%d - Loss: %.3f" % (i + 1, epochs, loss.item()))
-        eval(model, likelihood, X_val, y_val, split="val")
+        mae = eval(model, likelihood, X_val, y_val, split="val")
+        if mae < best_mae:
+            best_mae = mae
+            torch.save(
+                {
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "loss": loss,
+                    "mae": mae,
+                },
+                "./best_sgp_model.pt",
+            )
 
     eval(model, likelihood, X_test, y_test, split="test")
 
