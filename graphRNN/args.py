@@ -7,7 +7,7 @@ class Args():
         ### Which CUDA GPU device is used for training
         self.cuda = 0
         ### Which GraphRNN model variant is used.
-        # The simple version of Graph RNN
+        # The simple version of Graph RNN        
         self.note = 'GraphRNN_MLP'
         # The dependent Bernoulli sequence version of GraphRNN
         #self.note = 'GraphRNN_RNN'
