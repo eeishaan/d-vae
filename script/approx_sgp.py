@@ -52,7 +52,7 @@ def eval(model, likelihood, test_loader, split="val"):
             preds = model(x_batch)
             means = torch.cat([means, preds.mean.cpu()])
     means = means[1:]
-    print("{} MAE: {}".format(split, torch.mean(torch.abs(means - test_y.cpu()))))
+    return means
 
 
 class GPModel(ApproximateGP):
@@ -110,7 +110,7 @@ def main():
     likelihood = gpytorch.likelihoods.GaussianLikelihood().to(device=device)
 
     # Use the adam optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
+    optimizer = torch.optim.Adam(model.parameters(), lr=5e-4)
 
     # Our loss object. We're using the VariationalELBO, which essentially just computes the ELBO
     mll = gpytorch.mlls.VariationalELBO(
@@ -151,6 +151,10 @@ def main():
 
         # torch.cuda.empty_cache()
         print("Iter %d/%d - Loss: %.3f" % (i + 1, epochs, total_loss))
-        eval(model, likelihood, val_loader, split="val")
+        means = eval(model, likelihood, val_loader, split="val")
+        print('Val MAE: {}'.format(torch.mean(torch.abs(means - y_val.cpu()))))
+    means = eval(model, likelihood, test_loader, split="test")
+    print('Test MAE: {}'.format(torch.mean(torch.abs(means - y_test.cpu()))))
 
-    eval(model, likelihood, test_loader, split="test")
+if __name__ == "__main__":
+    main()
