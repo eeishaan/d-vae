@@ -21,7 +21,7 @@ model = Dvae(a)
 model.load_state_dict(checkpoint['state_dict'])
 model.eval()
 model.freeze()
-
+model.to(device)
 task_type = 'enas'
 dataset_file = os.path.join(DATA_DIR,  'final_structures6.txt')
 train_loader, val_loader, test_loader = get_dataloaders(
@@ -90,6 +90,7 @@ def check_validity(node_encoding, dep_graph, task_type):
 train_mu = []
 with torch.no_grad():
     for x in tqdm(train_loader):
+        x = {k: v.to(device) for k, v in x.items()}
         _, mu, _ = model.encoder(x)
         train_mu.append(mu)
     train_mu = torch.cat(train_mu, dim=0)
