@@ -40,10 +40,10 @@ def eval(model, likelihood, test_x, test_y, split="val"):
             30
         ), gpytorch.settings.fast_pred_var():
             preds = model(test_x)
-            print(type(preds))
+            #print(type(preds))
     print("{} MAE: {}".format(split, torch.mean(torch.abs(preds.mean - test_y))))
-    mse = (preds - test_y).norm().item()
-    print("{} MSE: {}".format(split, mse))
+    #mse = (preds - test_y).norm().item()
+    #print("{} MSE: {}".format(split, mse))
 
 
 def normalize_data(y, mean, std):
@@ -106,7 +106,7 @@ def main():
     model = GPRegressionModel(X_train, y_train, likelihood).to(device=device)
 
     # Use the adam optimizer
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
 
     # "Loss" for GPs - the marginal log likelihood
     mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
