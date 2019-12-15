@@ -22,7 +22,7 @@ import scipy.misc
 import time as tm
 
 from utils import *
-from models import *
+from model import *
 from data import *
 from args import *
 
