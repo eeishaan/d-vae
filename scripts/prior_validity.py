@@ -68,7 +68,9 @@ def check_validity(node_encoding, dep_graph, task_type):
         expected_nodes = torch.zeros_like(node_encoding[0])
         expected_nodes[0, -2] = 1
         expected_nodes[-1, -1] = 1
-        expected_nodes[1: -1] = torch.diag([1]*(seq_len-2), diagonal=1)
+        diag = torch.diag(torch.as_tensor(
+            [1]*(seq_len-2)), diagonal=1)[:-1, 1:].to(node_encoding.device)
+        expected_nodes[1:-1, :-2] = diag
         is_node_unique = (
             node_encoding == expected_nodes.unsqueeze(0)).all(2).all(1)
 
