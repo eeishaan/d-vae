@@ -129,10 +129,9 @@ def train(args, dataset_train, rnn, output):
             print('test done, graphs saved')
         # save model checkpoint
         if args.save:
-            if epoch % args.epochs_save == 0:
-                fname = args.model_save_path + args.fname + 'lstm_' + str(epoch) + '.dat'
-                torch.save(rnn.state_dict(), fname)
-                fname = args.model_save_path + args.fname + 'output_' + str(epoch) + '.dat'
-                torch.save(output.state_dict(), fname)
+            fname = args.model_save_path + args.fname + 'lstm_' + str(epoch) + '.dat'
+            torch.save(rnn.state_dict(), fname)
+            fname = args.model_save_path + args.fname + 'output_' + str(epoch) + '.dat'
+            torch.save(output.state_dict(), fname)
         epoch += 1
     np.save(args.timing_save_path+args.fname,time_all)
