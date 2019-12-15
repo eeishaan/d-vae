@@ -40,7 +40,10 @@ def eval(model, likelihood, test_x, test_y, split="val"):
             30
         ), gpytorch.settings.fast_pred_var():
             preds = model(test_x)
+            print(type(preds))
     print("{} MAE: {}".format(split, torch.mean(torch.abs(preds.mean - test_y))))
+    mse = (preds - test_y).norm().item()
+    print("{} MSE: {}".format(split, mse))
 
 
 def normalize_data(y, mean, std):
@@ -103,18 +106,16 @@ def main():
     model = GPRegressionModel(X_train, y_train, likelihood).to(device=device)
 
     # Use the adam optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
 
     # "Loss" for GPs - the marginal log likelihood
     mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
 
-    epochs = 100
+    epochs = 1800
     for i in range(epochs):
         model.train()
         likelihood.train()
-        total_loss = 0.0
-        # for minibatch_i, (x_batch, y_batch) in enumerate(train_loader):
-        #     start_time = time.time()
+
         # Zero backprop gradients
         optimizer.zero_grad()
         # Get output from model
@@ -123,20 +124,8 @@ def main():
         loss = -mll(output, y_train)
         loss.backward(retain_graph=True)
         optimizer.step()
-        total_loss += loss.item()
-        # print(
-        #     "Epoch %d [%d/%d] - Loss: %.3f - - Time: %.3f"
-        #     % (
-        #         i + 1,
-        #         minibatch_i,
-        #         len(train_loader),
-        #         loss.item(),
-        #         time.time() - start_time,
-        #     )
-        # )
 
-        # torch.cuda.empty_cache()
-        print("Iter %d/%d - Loss: %.3f" % (i + 1, epochs, total_loss))
+        print("Iter %d/%d - Loss: %.3f" % (i + 1, epochs, loss.item()))
         eval(model, likelihood, X_val, y_val, split="val")
 
     eval(model, likelihood, X_test, y_test, split="test")
