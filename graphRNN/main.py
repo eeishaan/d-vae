@@ -1,4 +1,11 @@
-from train import *
+import sys
+#sys.path.append('C:\\Users\\BBY\\graph')
+from args import*
+from graph.utils import*
+from models import*
+from data import*
+from create_graphs import*
+from training import*
 
 if __name__ == '__main__':
         # All necessary arguments are defined in args.py
