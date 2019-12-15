@@ -43,8 +43,9 @@ def eval(model, likelihood, test_x, test_y, split="val"):
 
     MAE = torch.mean(torch.abs(preds.mean - test_y))
     print("{} MAE: {}".format(split, MAE))
+    # checkpoint = torch.load(PATH)
+    # model.load_state_dict(checkpoint['model_state_dict'])
     return MAE
-
 
 
 def normalize_data(y, mean, std):
@@ -112,35 +113,37 @@ def main():
     # "Loss" for GPs - the marginal log likelihood
     mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
 
-    epochs = 1800
+    epochs = 100
     best_mae = float("inf")
-    for i in range(epochs):
-        model.train()
-        likelihood.train()
+    with gpytorch.settings.max_cg_iterations(45):
+        for i in range(epochs):
+            model.train()
+            likelihood.train()
 
-        # Zero backprop gradients
-        optimizer.zero_grad()
-        # Get output from model
-        output = model(X_train)
-        # Calc loss and backprop derivatives
-        loss = -mll(output, y_train)
-        loss.backward(retain_graph=True)
-        optimizer.step()
+            # Zero backprop gradients
+            optimizer.zero_grad()
+            # Get output from model
+            output = model(X_train)
+            # Calc loss and backprop derivatives
+            loss = -mll(output, y_train)
+            loss.backward(retain_graph=True)
+            optimizer.step()
 
-        print("Iter %d/%d - Loss: %.3f" % (i + 1, epochs, loss.item()))
-        mae = eval(model, likelihood, X_val, y_val, split="val")
-        if mae < best_mae:
-            best_mae = mae
-            torch.save(
-                {
-                    "epoch": epoch,
-                    "model_state_dict": model.state_dict(),
-                    "optimizer_state_dict": optimizer.state_dict(),
-                    "loss": loss,
-                    "mae": mae,
-                },
-                "./best_sgp_model.pt",
-            )
+            print("Iter %d/%d - Loss: %.3f" % (i + 1, epochs, loss.item()))
+            mae = eval(model, likelihood, X_val, y_val, split="val")
+            if mae < best_mae:
+                best_mae = mae
+                torch.save(
+                    {
+                        "epoch": epoch,
+                        "model_state_dict": model.state_dict(),
+                        "likelihood": likelihood.state_dict(),
+                        "optimizer_state_dict": optimizer.state_dict(),
+                        "loss": loss,
+                        "mae": mae,
+                    },
+                    "./best_sgp_model.pt",
+                )
 
     eval(model, likelihood, X_test, y_test, split="test")
 
