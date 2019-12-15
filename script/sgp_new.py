@@ -30,7 +30,7 @@ class GPRegressionModel(gpytorch.models.ExactGP):
         return MultivariateNormal(mean_x, covar_x)
 
 
-def eval(model, likelihood, test_x, test_y):
+def eval(model, likelihood, test_x, test_y, split="val"):
     model.eval()
     likelihood.eval()
     with gpytorch.settings.max_preconditioner_size(10), torch.no_grad():
@@ -40,7 +40,7 @@ def eval(model, likelihood, test_x, test_y):
             30
         ), gpytorch.settings.fast_pred_var():
             preds = model(test_x)
-    print("Test MAE: {}".format(torch.mean(torch.abs(preds.mean - test_y))))
+    print("{} MAE: {}".format(split, torch.mean(torch.abs(preds.mean - test_y))))
 
 
 def normalize_data(y, mean, std):
@@ -91,16 +91,18 @@ def main():
     y_test = normalize_data(y_test, mean, std)
     y_val = normalize_data(y_val, mean, std)
 
-    train_dataset = TensorDataset(X_train, y_train)
-    val_dataset = TensorDataset(X_val, y_val)
-    test_dataset = TensorDataset(X_test, y_test)
+    # train_dataset = TensorDataset(X_train, y_train)
+    # val_dataset = TensorDataset(X_val, y_val)
+    # test_dataset = TensorDataset(X_test, y_test)
 
-    train_loader = DataLoader(train_dataset, batch_size=1000, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=1000, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=1000, shuffle=False)
+    # train_loader = DataLoader(train_dataset, batch_size=1000, shuffle=True)
+    # val_loader = DataLoader(val_dataset, batch_size=1000, shuffle=False)
+    # test_loader = DataLoader(test_dataset, batch_size=1000, shuffle=False)
 
-    likelihood = gpytorch.likelihoods.GaussianLikelihood().to(device)
-    model = GPRegressionModel(X_train, y_train, likelihood).to(device)
+    likelihood = gpytorch.likelihoods.GaussianLikelihood().to(device=device)
+    model = GPRegressionModel(X_train[-500:, :], y_train[-500:, :], likelihood).to(
+        device=device
+    )
 
     model.train()
     likelihood.train()
@@ -119,9 +121,9 @@ def main():
         # Zero backprop gradients
         optimizer.zero_grad()
         # Get output from model
-        output = model(X_train)
+        output = model(X_train[-500:, :])
         # Calc loss and backprop derivatives
-        loss = -mll(output, y_train)
+        loss = -mll(output, y_train[-500:, :])
         loss.backward()
         # print(
         #     "Epoch %d [%d/%d] - Loss: %.3f - - Time: %.3f"
@@ -136,11 +138,13 @@ def main():
 
         optimizer.step()
         total_loss += loss.item()
-        eval(model, likelihood, X_val, y_val)
+        torch.cuda.empty_cache()
+
         # torch.cuda.empty_cache()
         print("Iter %d/%d - Loss: %.3f" % (i + 1, training_iterations, total_loss))
+        eval(model, likelihood, X_val, y_val, split="val")
 
-    eval(model, likelihood, X_test, y_test)
+    eval(model, likelihood, X_test, y_test, split="test")
 
 
 if __name__ == "__main__":
