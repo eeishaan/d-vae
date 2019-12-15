@@ -11,6 +11,7 @@ from gpytorch.means import ConstantMean
 from gpytorch.kernels import ScaleKernel, RBFKernel, InducingPointKernel
 from gpytorch.distributions import MultivariateNormal
 from torch.utils.data import TensorDataset, DataLoader
+from scipy import stats
 
 
 class GPRegressionModel(gpytorch.models.ExactGP):
@@ -30,6 +31,10 @@ class GPRegressionModel(gpytorch.models.ExactGP):
         return MultivariateNormal(mean_x, covar_x)
 
 
+def RMSELoss(y_hat, y):
+    return torch.sqrt(torch.mean((y_hat - y) ** 2)).item()
+
+
 def eval(model, likelihood, test_x, test_y, split="val"):
     model.eval()
     likelihood.eval()
@@ -42,9 +47,9 @@ def eval(model, likelihood, test_x, test_y, split="val"):
             preds = model(test_x)
 
     MAE = torch.mean(torch.abs(preds.mean - test_y))
-    print("{} MAE: {}".format(split, MAE))
-    # checkpoint = torch.load(PATH)
-    # model.load_state_dict(checkpoint['model_state_dict'])
+    pearsonr = stats.pearsonr(preds.mean.cpu().numpy(), test_y.cpu().numpy())[0]
+    rmse = RMSELoss(preds.mean, test_y)
+    print("{} MAE: {}| pearsonr: {} | rmse: {}".format(split, MAE, pearsonr, rmse))
     return MAE
 
 
@@ -135,7 +140,7 @@ def main():
                 best_mae = mae
                 torch.save(
                     {
-                        "epoch": epoch,
+                        "epoch": i,
                         "model_state_dict": model.state_dict(),
                         "likelihood": likelihood.state_dict(),
                         "optimizer_state_dict": optimizer.state_dict(),
