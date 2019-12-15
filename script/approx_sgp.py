@@ -14,6 +14,7 @@ from torch.utils.data import TensorDataset, DataLoader
 from gpytorch.models import ApproximateGP
 from gpytorch.variational import CholeskyVariationalDistribution
 from gpytorch.variational import WhitenedVariationalStrategy
+from scipy import stats
 
 
 def normalize_data(y, mean, std):
@@ -41,6 +42,10 @@ def load_data(device=None):
     X_test = torch.from_numpy(X_test).to(device)
     y_test = torch.from_numpy(y_test).to(device).to(dtype=torch.float)
     return (X_train, y_train), (X_val, y_val), (X_test, y_test)
+
+
+def RMSELoss(y_hat, y):
+    return torch.sqrt(torch.mean((y_hat - y) ** 2)).item()
 
 
 def eval(model, likelihood, test_loader, split="val"):
@@ -152,9 +157,17 @@ def main():
         # torch.cuda.empty_cache()
         print("Iter %d/%d - Loss: %.3f" % (i + 1, epochs, total_loss))
         means = eval(model, likelihood, val_loader, split="val")
-        print('Val MAE: {}'.format(torch.mean(torch.abs(means - y_val.cpu()))))
+        mae = torch.mean(torch.abs(means - y_val.cpu()))
+        pearsonr = stats.pearsonr(means.cpu().numpy(), y_val.cpu().numpy())[0]
+        rmse = RMSELoss(means, y_val)
+        print("Val | MAE: {}| pearsonr: {} | rmse: {}".format(mae, pearsonr, rmse))
+
     means = eval(model, likelihood, test_loader, split="test")
-    print('Test MAE: {}'.format(torch.mean(torch.abs(means - y_test.cpu()))))
+    mae = torch.mean(torch.abs(means - y_test.cpu()))
+    pearsonr = stats.pearsonr(means.cpu().numpy(), y_test.cpu().numpy())[0]
+    rmse = RMSELoss(means, y_test)
+    print("Val | MAE: {}| pearsonr: {} | rmse: {}".format(mae, pearsonr, rmse))
+
 
 if __name__ == "__main__":
     main()
