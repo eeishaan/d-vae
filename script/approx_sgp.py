@@ -123,13 +123,18 @@ def main():
     )
 
     epochs = 200
-
+    best_epoch = 0
+    data_type = "NAS"  #'BN'
+    best_model = None
+    best_likelihood = None
+    best_mae = float("inf")
     for i in range(epochs):
         model.train()
         likelihood.train()
         total_loss = 0.0
         for minibatch_i, (x_batch, y_batch) in enumerate(train_loader):
-            start_time = time.time()
+            if minibatch_i >= 5 and data_type == "BN":
+                break
             # Zero backprop gradients
             optimizer.zero_grad()
             # Get output from model
@@ -161,8 +166,23 @@ def main():
         pearsonr = stats.pearsonr(means.cpu().numpy(), y_val.cpu().numpy())[0]
         rmse = RMSELoss(means.to(device=device), y_val)
         print("Val | MAE: {}| pearsonr: {} | rmse: {}".format(mae, pearsonr, rmse))
+        if mae < best_mae:
+            best_epoch = i
+            best_model = model
+            best_likelihood = likelihood
 
-    means = eval(model, likelihood, test_loader, split="test")
+    # val
+    means = eval(best_model, best_likelihood, val_loader, split="val")
+    mae = torch.mean(torch.abs(means.to(device=device) - y_val))
+    pearsonr = stats.pearsonr(means.cpu().numpy(), y_val.cpu().numpy())[0]
+    rmse = RMSELoss(means.to(device=device), y_val)
+    print(
+        "Best Val at {} | MAE: {}| pearsonr: {} | rmse: {}".format(
+            best_epoch, mae, pearsonr, rmse
+        )
+    )
+    # test
+    means = eval(best_model, best_likelihood, test_loader, split="test")
     mae = torch.mean(torch.abs(means.to(device=device) - y_test))
     pearsonr = stats.pearsonr(means.cpu().numpy(), y_test.cpu().numpy())[0]
     rmse = RMSELoss(means.to(device=device), y_test)
