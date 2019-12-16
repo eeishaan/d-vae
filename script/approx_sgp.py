@@ -157,13 +157,13 @@ def main():
         # torch.cuda.empty_cache()
         print("Iter %d/%d - Loss: %.3f" % (i + 1, epochs, total_loss))
         means = eval(model, likelihood, val_loader, split="val")
-        mae = torch.mean(torch.abs(means - y_val.cpu()))
+        mae = torch.mean(torch.abs(means - y_val))
         pearsonr = stats.pearsonr(means.cpu().numpy(), y_val.cpu().numpy())[0]
         rmse = RMSELoss(means, y_val)
         print("Val | MAE: {}| pearsonr: {} | rmse: {}".format(mae, pearsonr, rmse))
 
     means = eval(model, likelihood, test_loader, split="test")
-    mae = torch.mean(torch.abs(means - y_test.cpu()))
+    mae = torch.mean(torch.abs(means - y_test))
     pearsonr = stats.pearsonr(means.cpu().numpy(), y_test.cpu().numpy())[0]
     rmse = RMSELoss(means, y_test)
     print("Val | MAE: {}| pearsonr: {} | rmse: {}".format(mae, pearsonr, rmse))
