@@ -5,6 +5,7 @@ from matplotlib import pyplot as plt
 import pickle
 import numpy as np
 import os.path
+import os
 from math import floor
 import time
 from gpytorch.means import ConstantMean
@@ -58,18 +59,29 @@ def normalize_data(y, mean, std):
     return y
 
 
-def load_data(device=None):
-    y_train = np.concatenate(pickle.load(open(f"../train_accs.pkl", "rb")), axis=0)
+def load_data(root_dir, device=None):
 
-    X_train = np.concatenate(
-        pickle.load(open(f"../train_latent_rep.pkl", "rb")), axis=0
+    y_train = np.concatenate(
+        pickle.load(open(os.path.join(root_dir, "train_accs.pkl"), "rb")), axis=0
     )
 
-    y_val = np.concatenate(pickle.load(open(f"../val_accs.pkl", "rb")), axis=0)
-    X_val = np.concatenate(pickle.load(open(f"../val_latent_rep.pkl", "rb")), axis=0)
+    X_train = np.concatenate(
+        pickle.load(open(os.path.join(root_dir, "train_latent_rep.pkl"), "rb")), axis=0
+    )
 
-    y_test = np.concatenate(pickle.load(open(f"../test_accs.pkl", "rb")), axis=0)
-    X_test = np.concatenate(pickle.load(open(f"../test_latent_rep.pkl", "rb")), axis=0)
+    y_val = np.concatenate(
+        pickle.load(open(os.path.join(root_dir, "val_accs.pkl"), "rb")), axis=0
+    )
+    X_val = np.concatenate(
+        pickle.load(open(os.path.join(root_dir, "val_latent_rep.pkl"), "rb")), axis=0
+    )
+
+    y_test = np.concatenate(
+        pickle.load(open(os.path.join(root_dir, "test_accs.pkl"), "rb")), axis=0
+    )
+    X_test = np.concatenate(
+        pickle.load(open(os.path.join(root_dir, "test_latent_rep.pkl"), "rb")), axis=0
+    )
 
     X_train = torch.from_numpy(X_train).to(device)
     y_train = torch.from_numpy(y_train).to(device).to(dtype=torch.float)
@@ -82,10 +94,11 @@ def load_data(device=None):
 
 def main():
     # set the seed
-    np.random.seed(1)
+    # np.random.seed(1)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(device)
-    train_data, val_data, test_data = load_data(device)
+    root_dir = "../dvae/checkpoints/high_lr/"
+    train_data, val_data, test_data = load_data(root_dir, device)
     X_train, y_train = train_data
     X_val, y_val = val_data
     X_test, y_test = test_data
@@ -168,12 +181,14 @@ def main():
             best_model, best_likelihood, X_test, y_test, split="test"
         )
         test_rmses.append(rmse)
-        test_prs.append(pearsonr)
+        if not math.isnan(pearsonr):
+            test_prs.append(pearsonr)
 
     test_rmses = np.array(test_rmses)
     test_prs = np.array(test_prs)
     print("Test: RMSE | Mean: {} | Std: {}".format(test_rmses.mean(), test_rmses.std()))
     print("Test: Pearsonr | Mean: {} | Std: {}".format(test_prs.mean(), test_prs.std()))
+    print(root_dir)
 
 
 if __name__ == "__main__":
