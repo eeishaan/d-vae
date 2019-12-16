@@ -83,7 +83,7 @@ class GPModel(ApproximateGP):
 
 def main():
     # set the seed
-    np.random.seed(1)
+    # np.random.seed(1)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(device)
     train_data, val_data, test_data = load_data(device)

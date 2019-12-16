@@ -373,8 +373,11 @@ class Dvae(pl.LightningModule):
         super(Dvae, self).__init__()
         self.hparams = hparams
         task_type = getattr(hparams, 'task_type', 'enas')
-        self.train_loader, self.val_loader, self.test_loader = get_dataloaders(
-            hparams.batch_size, hparams.dataset_file, task_type=task_type) if hparams.dataset_file else [None]*3
+        try:
+            self.train_loader, self.val_loader, self.test_loader = get_dataloaders(
+                hparams.batch_size, hparams.dataset_file, task_type=task_type) if hparams.dataset_file else [None]*3
+        except:
+            pass
         self.num_classes = getattr(hparams, 'num_classes', 8)
         self.max_seq = getattr(hparams, 'max_seq', 8)
         self.hidden_state_size = 501

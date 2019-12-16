@@ -83,19 +83,25 @@ class Svae(pl.LightningModule):
     def __init__(self, hparams):
         super(Svae, self).__init__()
         self.hparams = hparams
-        task_type = getattr(hparams, 'task_type', 'enas')
-        self.train_loader, self.val_loader, self.test_loader = (
-            get_dataloaders(hparams.batch_size,
-                            hparams.dataset_file, fmt="str", task_type=task_type)
-            if hparams.dataset_file
-            else [None] * 3
-        )
-        self.node_type = getattr(hparams, 'num_classes', 8)
-        self.max_seq_len = getattr(hparams, 'max_seq', 8)
+        task_type = getattr(hparams, "task_type", "enas")
+        try:
+            self.train_loader, self.val_loader, self.test_loader = (
+                get_dataloaders(
+                    hparams.batch_size,
+                    hparams.dataset_file,
+                    fmt="str",
+                    task_type=task_type,
+                )
+                if hparams.dataset_file
+                else [None] * 3
+            )
+        except:
+            pass
+        self.node_type = getattr(hparams, "num_classes", 8)
+        self.max_seq_len = getattr(hparams, "max_seq", 8)
         self.bidir = self.hparams.bidirectional
 
-        self.encoder = Encoder(
-            self.node_type, self.max_seq_len, bidir=self.bidir)
+        self.encoder = Encoder(self.node_type, self.max_seq_len, bidir=self.bidir)
         self.decoder = Decoder(self.node_type, self.max_seq_len)
 
         self.bce_loss = torch.nn.BCEWithLogitsLoss(reduction="sum")
@@ -155,8 +161,7 @@ class Svae(pl.LightningModule):
                 gen_node_encoding, gen_dep_graph
             )
         pred_dep_graph = torch.cat((gen_node_encoding, gen_dep_graph), dim=-1)
-        is_equal = torch.eq(pred_dep_graph, true_dep_graph).all(
-            dim=-1).all(dim=-1)
+        is_equal = torch.eq(pred_dep_graph, true_dep_graph).all(dim=-1).all(dim=-1)
         acc = is_equal.sum() / is_equal.shape[0]
         return acc.float()
 
@@ -164,7 +169,7 @@ class Svae(pl.LightningModule):
         # REQUIRED
         dep_graph = batch["graph"]
         node_encoding = dep_graph[:, :, : self.node_type]
-        dep_matrix = dep_graph[:, :, self.node_type:]
+        dep_matrix = dep_graph[:, :, self.node_type :]
 
         gen_node_encoding, gen_dep_graph, mu, logvar = self.forward(dep_graph)
 
@@ -203,9 +208,8 @@ class Svae(pl.LightningModule):
         with torch.no_grad():
             dep_graph = batch["graph"]
             node_encoding = dep_graph[:, :, : self.node_type]
-            dep_matrix = dep_graph[:, :, self.node_type:]
-            gen_node_encoding, gen_dep_graph, mu, logvar = self.forward(
-                dep_graph)
+            dep_matrix = dep_graph[:, :, self.node_type :]
+            gen_node_encoding, gen_dep_graph, mu, logvar = self.forward(dep_graph)
 
             edge_loss = self.bce_loss(gen_dep_graph, dep_matrix)
 
@@ -252,8 +256,7 @@ class Svae(pl.LightningModule):
     def configure_optimizers(self):
         # REQUIRED
         optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
-        lr_schedule = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, min_lr=1e-6)
+        lr_schedule = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, min_lr=1e-6)
         return [optimizer], [lr_schedule]
 
     @pl.data_loader
@@ -281,8 +284,7 @@ class Svae(pl.LightningModule):
             batch_size, samples, hidden_size = stack_z.shape
             assert samples == sample_num
             stack_z = stack_z.repeat(1, decode_num, 1)
-            sampled_z = stack_z.view(
-                batch_size * sample_num * decode_num, hidden_size)
+            sampled_z = stack_z.view(batch_size * sample_num * decode_num, hidden_size)
             gen_node_encoding, gen_dep_graph = self.decoder(sampled_z)
             gen_node_encoding, gen_dep_graph = self._predict_from_logits(
                 gen_node_encoding, gen_dep_graph, is_stochastic=is_stochastic
@@ -293,8 +295,7 @@ class Svae(pl.LightningModule):
                 batch_size, decode_num * samples, *pred_graph.shape[1:]
             )
 
-            correct = (true_graph.unsqueeze(1) ==
-                       pred_graph).all(dim=-1).all(dim=-1)
+            correct = (true_graph.unsqueeze(1) == pred_graph).all(dim=-1).all(dim=-1)
 
             acc = correct.sum().item() / (batch_size * decode_num * samples)
 
