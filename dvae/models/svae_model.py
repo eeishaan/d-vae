@@ -119,7 +119,7 @@ class Svae(pl.LightningModule):
         mu, logvar = self.encoder(X)
         z = self.reparamterize(mu, logvar)
         type_scores, edge_scores = self.decoder(z)
-        gen_dep_graph, gen_node_encoding = self._predict_from_logits(
+        gen_node_encoding, gen_dep_graph = self._predict_from_logits(
             type_scores, edge_scores)
 
         return gen_node_encoding, gen_dep_graph
