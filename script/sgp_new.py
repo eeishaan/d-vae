@@ -113,12 +113,12 @@ def main():
     model = GPRegressionModel(X_train, y_train, likelihood).to(device=device)
 
     # Use the adam optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=5e-4)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 
     # "Loss" for GPs - the marginal log likelihood
     mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
 
-    epochs = 400
+    epochs = 500
     best_mae = float("inf")
     with gpytorch.settings.max_cg_iterations(4000):
         for i in range(epochs):
