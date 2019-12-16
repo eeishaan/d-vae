@@ -72,24 +72,20 @@ def check_validity(node_encoding, dep_graph, task_type):
         is_dag = (upper_triangular_mat * dep_graph == 0).all(2).all(1)
 
         valid = is_only_one_start_node * is_last_node_end * is_only_one_last_node * \
-            is_predecessor * is_successor * is_pred_connection
+            is_predecessor * is_successor * is_pred_connection * is_dag
 
     elif task_type == 'bn':
         # check if unique nodes
         expected_nodes = torch.zeros_like(node_encoding[0])
         expected_nodes[-1, -1] = 1
         diag = torch.diag(torch.as_tensor(
-            [1]*(seq_len-2)), diagonal=1)[:-1, 1:].to(node_encoding.device)
+            [1]*(seq_len-1)), diagonal=1)[:-1, 1:].to(node_encoding.device)
+
         expected_nodes[:-1, :-2] = diag
         is_node_unique = (
             node_encoding == expected_nodes.unsqueeze(0)).all(2).all(1)
 
-        # it's a DAG
-        upper_triangular_mat = torch.ones_like(dep_graph)
-        upper_triangular_mat = torch.triu(upper_triangular_mat)
-        is_dag = (upper_triangular_mat * dep_graph == 0).all(2).all(1)
-
-        valid = is_node_unique * is_dag
+        valid = is_node_unique
 
     else:
         raise NotImplementedError
