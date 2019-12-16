@@ -118,6 +118,9 @@ class Encoder(nn.Module):
                 # concatenate forward and backward encoding
                 hv = self.lin01(torch.cat([hv, hv_back], dim=-1))
 
+        if self.mod == 'bn':
+            hv = node_hidden_state.sum(1)
+
         mu = self.lin11(hv)
         logvar = self.lin12(hv)
         return hv, mu, logvar
