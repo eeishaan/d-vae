@@ -131,7 +131,7 @@ def main():
             likelihood, model, num_data=y_train.size(0), combine_terms=False
         )
 
-        epochs = 200
+        epochs = 100
         best_epoch = 0
         best_model = None
         best_likelihood = None
