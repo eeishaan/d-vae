@@ -115,14 +115,14 @@ def main():
     likelihood = gpytorch.likelihoods.GaussianLikelihood().to(device=device)
 
     # Use the adam optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=5e-4)
+    optimizer = torch.optim.Adam(model.parameters(), lr=5e-2)
 
     # Our loss object. We're using the VariationalELBO, which essentially just computes the ELBO
     mll = gpytorch.mlls.VariationalELBO(
         likelihood, model, num_data=y_train.size(0), combine_terms=False
     )
 
-    epochs = 100
+    epochs = 200
 
     for i in range(epochs):
         model.train()
@@ -157,15 +157,15 @@ def main():
         # torch.cuda.empty_cache()
         print("Iter %d/%d - Loss: %.3f" % (i + 1, epochs, total_loss))
         means = eval(model, likelihood, val_loader, split="val")
-        mae = torch.mean(torch.abs(means - y_val))
+        mae = torch.mean(torch.abs(means.to(device=device) - y_val))
         pearsonr = stats.pearsonr(means.cpu().numpy(), y_val.cpu().numpy())[0]
-        rmse = RMSELoss(means, y_val)
+        rmse = RMSELoss(means.to(device=device), y_val)
         print("Val | MAE: {}| pearsonr: {} | rmse: {}".format(mae, pearsonr, rmse))
 
     means = eval(model, likelihood, test_loader, split="test")
-    mae = torch.mean(torch.abs(means - y_test))
+    mae = torch.mean(torch.abs(means.to(device=device) - y_test))
     pearsonr = stats.pearsonr(means.cpu().numpy(), y_test.cpu().numpy())[0]
-    rmse = RMSELoss(means, y_test)
+    rmse = RMSELoss(means.to(device=device), y_test)
     print("Val | MAE: {}| pearsonr: {} | rmse: {}".format(mae, pearsonr, rmse))
 
 
