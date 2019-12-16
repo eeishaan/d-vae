@@ -22,6 +22,7 @@ from dvae.utils.dataloader import get_dataloaders
 model_dir = "dvae/checkpoints/high_lr/"
 model_name = glob.glob(model_dir + "*.ckpt")[0]
 model = Dvae.load_from_checkpoint(model_name)
+print(model_name)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 model.to(device=device)
@@ -39,40 +40,44 @@ y_val = []
 latent_vectors = []
 for batch in val_loader[0]:
     true_acc = batch["acc"]
+    batch = {k: v.to(device) for k, v in batch.items()}
     _, mu, logvar = model.encoder(batch)
     z = model.reparamterize(mu, logvar)
     y_val.append(true_acc.detach().numpy())
-    latent_vectors.append(z.detach().numpy())
+    latent_vectors.append(z.detach().cpu().numpy())
 
 print(latent_vectors[0].shape)
 print(len(latent_vectors))
-pickle.dump(latent_vectors, open(f"./val_latent_rep.pkl", "wb"))
-pickle.dump(y_val, open(f"./val_accs.pkl", "wb"))
+print(os.path.join(model_dir, "val_latent_rep.pkl"))
+pickle.dump(latent_vectors, open(os.path.join(model_dir, "val_latent_rep.pkl"), "wb"))
+pickle.dump(y_val, open(os.path.join(model_dir,"val_accs.pkl"), "wb"))
 
 y_train = []
 latent_vectors = []
 for batch in train_loader:
     true_acc = batch["acc"]
+    batch = {k: v.to(device) for k, v in batch.items()}
     _, mu, logvar = model.encoder(batch)
     z = model.reparamterize(mu, logvar)
     y_train.append(true_acc.detach().numpy())
-    latent_vectors.append(z.detach().numpy())
+    latent_vectors.append(z.detach().cpu().numpy())
 
 print(latent_vectors[0].shape)
 print(len(latent_vectors))
-pickle.dump(latent_vectors, open(f"./train_latent_rep.pkl", "wb"))
-pickle.dump(y_train, open(f"./train_accs.pkl", "wb"))
+pickle.dump(latent_vectors, open(os.path.join(model_dir,"train_latent_rep.pkl"), "wb"))
+pickle.dump(y_train, open(os.path.join(model_dir,"train_accs.pkl"), "wb"))
 
 y_test = []
 latent_vectors = []
 for batch in test_loader:
     true_acc = batch["acc"]
+    batch = {k: v.to(device) for k, v in batch.items()}
     _, mu, logvar = model.encoder(batch)
     z = model.reparamterize(mu, logvar)
     y_test.append(true_acc.detach().numpy())
-    latent_vectors.append(z.detach().numpy())
+    latent_vectors.append(z.detach().cpu().numpy())
 
 print(latent_vectors[0].shape)
 print(len(latent_vectors))
-pickle.dump(latent_vectors, open(f"./test_latent_rep.pkl", "wb"))
-pickle.dump(y_test, open(f"./test_accs.pkl", "wb"))
+pickle.dump(latent_vectors, open(os.path.join(model_dir,"test_latent_rep.pkl"), "wb"))
+pickle.dump(y_test, open(os.path.join(model_dir,"test_accs.pkl"), "wb"))

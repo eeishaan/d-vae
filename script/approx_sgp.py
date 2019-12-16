@@ -23,17 +23,18 @@ def normalize_data(y, mean, std):
 
 
 def load_data(device=None):
-    y_train = np.concatenate(pickle.load(open(f"../train_accs.pkl", "rb")), axis=0)
+    root_dir = "../dvae/checkpoints/dvae_enas_no_bidir/"
+    y_train = np.concatenate(pickle.load(open(os.path.join(root_dir, "train_accs.pkl"), "rb")), axis=0)
 
     X_train = np.concatenate(
-        pickle.load(open(f"../train_latent_rep.pkl", "rb")), axis=0
+        pickle.load(open(os.path.join(root_dir, "train_latent_rep.pkl"), "rb")), axis=0
     )
 
-    y_val = np.concatenate(pickle.load(open(f"../val_accs.pkl", "rb")), axis=0)
-    X_val = np.concatenate(pickle.load(open(f"../val_latent_rep.pkl", "rb")), axis=0)
+    y_val = np.concatenate(pickle.load(open(os.path.join(root_dir, "val_accs.pkl"), "rb")), axis=0)
+    X_val = np.concatenate(pickle.load(open(os.path.join(root_dir, "val_latent_rep.pkl"), "rb")), axis=0)
 
-    y_test = np.concatenate(pickle.load(open(f"../test_accs.pkl", "rb")), axis=0)
-    X_test = np.concatenate(pickle.load(open(f"../test_latent_rep.pkl", "rb")), axis=0)
+    y_test = np.concatenate(pickle.load(open(os.path.join(root_dir, "test_accs.pkl"), "rb")), axis=0)
+    X_test = np.concatenate(pickle.load(open(os.path.join(root_dir, "test_latent_rep.pkl"), "rb")), axis=0)
 
     X_train = torch.from_numpy(X_train).to(device)
     y_train = torch.from_numpy(y_train).to(device).to(dtype=torch.float)
@@ -84,6 +85,7 @@ class GPModel(ApproximateGP):
 def main():
     # set the seed
     # np.random.seed(1)
+    root_dir = "../dvae/checkpoints/dvae_enas_no_bidir/"
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(device)
     train_data, val_data, test_data = load_data(device)
@@ -124,7 +126,7 @@ def main():
         likelihood = gpytorch.likelihoods.GaussianLikelihood().to(device=device)
 
         # Use the adam optimizer
-        optimizer = torch.optim.Adam(model.parameters(), lr=5e-2)
+        optimizer = torch.optim.Adam(model.parameters(), lr=5e-4)
 
         # Our loss object. We're using the VariationalELBO, which essentially just computes the ELBO
         mll = gpytorch.mlls.VariationalELBO(
@@ -194,16 +196,17 @@ def main():
         means = eval(best_model, best_likelihood, test_loader, split="test")
         mae = torch.mean(torch.abs(means.to(device=device) - y_test))
         pearsonr = stats.pearsonr(means.cpu().numpy(), y_test.cpu().numpy())[0]
+        if not math.isnan(pearsonr):
+            test_prs.append(pearsonr)
         rmse = RMSELoss(means.to(device=device), y_test)
         print("Val | MAE: {}| pearsonr: {} | rmse: {}".format(mae, pearsonr, rmse))
         test_rmses.append(rmse)
-        test_prs.append(pearsonr)
-
+        
     test_rmses = np.array(test_rmses)
     test_prs = np.array(test_prs)
     print("Test: RMSE | Mean: {} | Std: {}".format(test_rmses.mean(), test_rmses.std()))
     print("Test: Pearsonr | Mean: {} | Std: {}".format(test_prs.mean(), test_prs.std()))
-
+    print(root_dir)
 
 if __name__ == "__main__":
     main()
