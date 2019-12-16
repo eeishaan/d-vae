@@ -21,7 +21,7 @@ from dvae.utils.dataloader import get_dataloaders
 # model = Svae(a)
 model_dir = "dvae/checkpoints/high_lr/"
 model_name = glob.glob(model_dir + "*.ckpt")[0]
-model = Dvae.load_from_checkpoint(model_dir + model_name)
+model = Dvae.load_from_checkpoint(model_name)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 model.to(device=device)
