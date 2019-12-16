@@ -50,7 +50,7 @@ def eval(model, likelihood, test_x, test_y, split="val"):
     pearsonr = stats.pearsonr(preds.mean.cpu().numpy(), test_y.cpu().numpy())[0]
     rmse = RMSELoss(preds.mean, test_y)
     print("{} MAE: {}| pearsonr: {} | rmse: {}".format(split, MAE, pearsonr, rmse))
-    return MAE
+    return MAE, rmse, pearsonr
 
 
 def normalize_data(y, mean, std):
@@ -101,56 +101,79 @@ def main():
     y_test = normalize_data(y_test, mean, std)
     y_val = normalize_data(y_val, mean, std)
 
-    # train_dataset = TensorDataset(X_train, y_train)
-    # val_dataset = TensorDataset(X_val, y_val)
-    # test_dataset = TensorDataset(X_test, y_test)
+    test_rmses = []
+    test_prs = []
+    data_type = "NAS"  #'BN'
 
-    # train_loader = DataLoader(train_dataset, batch_size=1000, shuffle=True)
-    # val_loader = DataLoader(val_dataset, batch_size=1000, shuffle=False)
-    # test_loader = DataLoader(test_dataset, batch_size=1000, shuffle=False)
+    for exp_no in range(10):
+        idx_perm = torch.randperm(X_train.size(0))
+        X_train = X_train[idx_perm]
+        y_train = y_train[idx_perm]
 
-    likelihood = gpytorch.likelihoods.GaussianLikelihood().to(device=device)
-    model = GPRegressionModel(X_train, y_train, likelihood).to(device=device)
+        likelihood = gpytorch.likelihoods.GaussianLikelihood().to(device=device)
+        model = GPRegressionModel(X_train, y_train, likelihood).to(device=device)
 
-    # Use the adam optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+        # Use the adam optimizer
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 
-    # "Loss" for GPs - the marginal log likelihood
-    mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
+        # "Loss" for GPs - the marginal log likelihood
+        mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
 
-    epochs = 500
-    best_mae = float("inf")
-    with gpytorch.settings.max_cg_iterations(4000):
-        for i in range(epochs):
-            model.train()
-            likelihood.train()
+        epochs = 500
+        best_epoch = 0
+        best_mae = float("inf")
+        best_model = None
+        best_likelihood = None
+        with gpytorch.settings.max_cg_iterations(4000):
+            for i in range(epochs):
+                model.train()
+                likelihood.train()
 
-            # Zero backprop gradients
-            optimizer.zero_grad()
-            # Get output from model
-            output = model(X_train)
-            # Calc loss and backprop derivatives
-            loss = -mll(output, y_train)
-            loss.backward(retain_graph=True)
-            optimizer.step()
+                # Zero backprop gradients
+                optimizer.zero_grad()
+                # Get output from model
+                output = model(X_train)
+                # Calc loss and backprop derivatives
+                loss = -mll(output, y_train)
+                loss.backward(retain_graph=True)
+                optimizer.step()
 
-            print("Iter %d/%d - Loss: %.3f" % (i + 1, epochs, loss.item()))
-            mae = eval(model, likelihood, X_val, y_val, split="val")
-            if mae < best_mae:
-                best_mae = mae
-                torch.save(
-                    {
-                        "epoch": i,
-                        "model_state_dict": model.state_dict(),
-                        "likelihood": likelihood.state_dict(),
-                        "optimizer_state_dict": optimizer.state_dict(),
-                        "loss": loss,
-                        "mae": mae,
-                    },
-                    "./best_sgp_model.pt",
-                )
+                print("Iter %d/%d - Loss: %.3f" % (i + 1, epochs, loss.item()))
+                mae, rmse, pearsonr = eval(model, likelihood, X_val, y_val, split="val")
+                if mae < best_mae:
+                    best_mae = mae
+                    best_epoch = i
+                    best_model = model
+                    best_likelihood = likelihood
+                    torch.save(
+                        {
+                            "epoch": i,
+                            "model_state_dict": model.state_dict(),
+                            "likelihood": likelihood.state_dict(),
+                            "optimizer_state_dict": optimizer.state_dict(),
+                            "loss": loss,
+                            "mae": mae,
+                        },
+                        "./best_sgp_model.pt",
+                    )
 
-    eval(model, likelihood, X_test, y_test, split="test")
+        eval(
+            best_model,
+            best_likelihood,
+            X_val,
+            y_val,
+            split="Best val at epoch " + str(best_epoch),
+        )
+        mae, rmse, pearsonr = eval(
+            best_model, best_likelihood, X_test, y_test, split="test"
+        )
+        test_rmses.append(rmse)
+        test_prs.append(pearsonr)
+
+    test_rmses = np.array(test_rmses)
+    test_prs = np.array(test_prs)
+    print("Test: RMSE | Mean: {} | Std: {}".format(test_rmses.mean(), test_rmses.std()))
+    print("Test: Pearsonr | Mean: {} | Std: {}".format(test_prs.mean(), test_prs.std()))
 
 
 if __name__ == "__main__":

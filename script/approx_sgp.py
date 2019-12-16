@@ -102,91 +102,107 @@ def main():
     y_test = normalize_data(y_test, mean, std)
     y_val = normalize_data(y_val, mean, std)
 
-    train_dataset = TensorDataset(X_train, y_train)
-    val_dataset = TensorDataset(X_val, y_val)
-    test_dataset = TensorDataset(X_test, y_test)
-
-    train_loader = DataLoader(train_dataset, batch_size=1000, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=1000, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=1000, shuffle=False)
-
-    inducing_points = X_train[:500, :]
-    model = GPModel(inducing_points=inducing_points).to(device=device)
-    likelihood = gpytorch.likelihoods.GaussianLikelihood().to(device=device)
-
-    # Use the adam optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=5e-2)
-
-    # Our loss object. We're using the VariationalELBO, which essentially just computes the ELBO
-    mll = gpytorch.mlls.VariationalELBO(
-        likelihood, model, num_data=y_train.size(0), combine_terms=False
-    )
-
-    epochs = 200
-    best_epoch = 0
+    test_rmses = []
+    test_prs = []
     data_type = "NAS"  #'BN'
-    best_model = None
-    best_likelihood = None
-    best_mae = float("inf")
-    for i in range(epochs):
-        model.train()
-        likelihood.train()
-        total_loss = 0.0
-        for minibatch_i, (x_batch, y_batch) in enumerate(train_loader):
-            if minibatch_i >= 5 and data_type == "BN":
-                break
-            # Zero backprop gradients
-            optimizer.zero_grad()
-            # Get output from model
-            output = model(x_batch)
-            # Calc loss and backprop derivatives
-            log_lik, kl_div, log_prior = mll(output, y_batch)
-            loss = -(log_lik - kl_div + log_prior)
 
-            loss.backward(retain_graph=True)
-            optimizer.step()
-            total_loss += loss.item()
-            print(
-                "Epoch %d [%d/%d] - Loss: %.3f [%.3f, %.3f, %.3f]"
-                % (
-                    i + 1,
-                    minibatch_i,
-                    len(train_loader),
-                    loss.item(),
-                    log_lik.item(),
-                    kl_div.item(),
-                    log_prior.item(),
+    for exp_no in range(10):
+        idx_perm = torch.randperm(X_train.size(0))
+        X_train = X_train[idx_perm]
+        y_train = y_train[idx_perm]
+
+        train_dataset = TensorDataset(X_train, y_train)
+        val_dataset = TensorDataset(X_val, y_val)
+        test_dataset = TensorDataset(X_test, y_test)
+
+        train_loader = DataLoader(train_dataset, batch_size=1000, shuffle=True)
+        val_loader = DataLoader(val_dataset, batch_size=1000, shuffle=False)
+        test_loader = DataLoader(test_dataset, batch_size=1000, shuffle=False)
+
+        inducing_points = X_train[:500, :]
+        model = GPModel(inducing_points=inducing_points).to(device=device)
+        likelihood = gpytorch.likelihoods.GaussianLikelihood().to(device=device)
+
+        # Use the adam optimizer
+        optimizer = torch.optim.Adam(model.parameters(), lr=5e-2)
+
+        # Our loss object. We're using the VariationalELBO, which essentially just computes the ELBO
+        mll = gpytorch.mlls.VariationalELBO(
+            likelihood, model, num_data=y_train.size(0), combine_terms=False
+        )
+
+        epochs = 200
+        best_epoch = 0
+        best_model = None
+        best_likelihood = None
+        best_mae = float("inf")
+
+        for i in range(epochs):
+            model.train()
+            likelihood.train()
+            total_loss = 0.0
+            for minibatch_i, (x_batch, y_batch) in enumerate(train_loader):
+                if minibatch_i >= 5 and data_type == "BN":
+                    break
+                # Zero backprop gradients
+                optimizer.zero_grad()
+                # Get output from model
+                output = model(x_batch)
+                # Calc loss and backprop derivatives
+                log_lik, kl_div, log_prior = mll(output, y_batch)
+                loss = -(log_lik - kl_div + log_prior)
+
+                loss.backward(retain_graph=True)
+                optimizer.step()
+                total_loss += loss.item()
+                print(
+                    "Epoch %d [%d/%d] - Loss: %.3f [%.3f, %.3f, %.3f]"
+                    % (
+                        i + 1,
+                        minibatch_i,
+                        len(train_loader),
+                        loss.item(),
+                        log_lik.item(),
+                        kl_div.item(),
+                        log_prior.item(),
+                    )
                 )
-            )
 
-        # torch.cuda.empty_cache()
-        print("Iter %d/%d - Loss: %.3f" % (i + 1, epochs, total_loss))
-        means = eval(model, likelihood, val_loader, split="val")
+            # torch.cuda.empty_cache()
+            print("Iter %d/%d - Loss: %.3f" % (i + 1, epochs, total_loss))
+            means = eval(model, likelihood, val_loader, split="val")
+            mae = torch.mean(torch.abs(means.to(device=device) - y_val))
+            pearsonr = stats.pearsonr(means.cpu().numpy(), y_val.cpu().numpy())[0]
+            rmse = RMSELoss(means.to(device=device), y_val)
+            print("Val | MAE: {}| pearsonr: {} | rmse: {}".format(mae, pearsonr, rmse))
+            if mae < best_mae:
+                best_epoch = i
+                best_model = model
+                best_likelihood = likelihood
+
+        # val
+        means = eval(best_model, best_likelihood, val_loader, split="val")
         mae = torch.mean(torch.abs(means.to(device=device) - y_val))
         pearsonr = stats.pearsonr(means.cpu().numpy(), y_val.cpu().numpy())[0]
         rmse = RMSELoss(means.to(device=device), y_val)
-        print("Val | MAE: {}| pearsonr: {} | rmse: {}".format(mae, pearsonr, rmse))
-        if mae < best_mae:
-            best_epoch = i
-            best_model = model
-            best_likelihood = likelihood
-
-    # val
-    means = eval(best_model, best_likelihood, val_loader, split="val")
-    mae = torch.mean(torch.abs(means.to(device=device) - y_val))
-    pearsonr = stats.pearsonr(means.cpu().numpy(), y_val.cpu().numpy())[0]
-    rmse = RMSELoss(means.to(device=device), y_val)
-    print(
-        "Best Val at {} | MAE: {}| pearsonr: {} | rmse: {}".format(
-            best_epoch, mae, pearsonr, rmse
+        print(
+            "Best Val at {} | MAE: {}| pearsonr: {} | rmse: {}".format(
+                best_epoch, mae, pearsonr, rmse
+            )
         )
-    )
-    # test
-    means = eval(best_model, best_likelihood, test_loader, split="test")
-    mae = torch.mean(torch.abs(means.to(device=device) - y_test))
-    pearsonr = stats.pearsonr(means.cpu().numpy(), y_test.cpu().numpy())[0]
-    rmse = RMSELoss(means.to(device=device), y_test)
-    print("Val | MAE: {}| pearsonr: {} | rmse: {}".format(mae, pearsonr, rmse))
+        # test
+        means = eval(best_model, best_likelihood, test_loader, split="test")
+        mae = torch.mean(torch.abs(means.to(device=device) - y_test))
+        pearsonr = stats.pearsonr(means.cpu().numpy(), y_test.cpu().numpy())[0]
+        rmse = RMSELoss(means.to(device=device), y_test)
+        print("Val | MAE: {}| pearsonr: {} | rmse: {}".format(mae, pearsonr, rmse))
+        test_rmses.append(rmse)
+        test_prs.append(pearsonr)
+
+    test_rmses = np.array(test_rmses)
+    test_prs = np.array(test_prs)
+    print("Test: RMSE | Mean: {} | Std: {}".format(test_rmses.mean(), test_rmses.std()))
+    print("Test: Pearsonr | Mean: {} | Std: {}".format(test_prs.mean(), test_prs.std()))
 
 
 if __name__ == "__main__":
