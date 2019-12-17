@@ -27,19 +27,20 @@ def visul_2d(model, likelihood, X_train, data_type='BN', save_dir=None):
     x_range = np.arange(-max_xy, max_xy, 0.005)
     y_range = np.arange(max_xy, -max_xy, -0.005)
     n = len(x_range)
+    print("n:", n)
     x_range, y_range = np.meshgrid(x_range, y_range)
     x_range, y_range = x_range.reshape((-1, 1)), y_range.reshape((-1, 1))
 
     if True:  # select two principal components to visualize
         pca = PCA(n_components=2, whiten=True)
-        pca.fit(X_train)
+        pca.fit(X_train.cpu().numpy())
         d1, d2 = pca.components_[0:1], pca.components_[1:2]
         new_x_range = x_range * d1
         new_y_range = y_range * d2
         print("shape", x_range.shape, d1.shape)
         grid_inputs = torch.FloatTensor(new_x_range + new_y_range).cuda()
         print("grid_inputs", grid_inputs.shape)
-    else:
+    #else:
         # grid_inputs = torch.FloatTensor(np.concatenate([x_range, y_range], 1)).cuda()
         # if args.nz > 2:
         #     grid_inputs = torch.cat(
@@ -47,10 +48,10 @@ def visul_2d(model, likelihood, X_train, data_type='BN', save_dir=None):
         #     )
 
     valid_arcs_grid = []
-    batch = 1000
+    batch = 3000
     for i in range(0, grid_inputs.shape[0], batch):
         batch_grid_inputs = grid_inputs[i : i + batch, :]
-        valid_arcs_grid += batch_grid_inputs
+        valid_arcs_grid.append(batch_grid_inputs)
         # valid_arcs_grid += decode_from_latent_space(
         #     batch_grid_inputs, model, 100, max_n, False, data_type
         # )
@@ -61,7 +62,7 @@ def visul_2d(model, likelihood, X_train, data_type='BN', save_dir=None):
     for i in range(len(valid_arcs_grid)):
         arc = valid_arcs_grid[i]
         if arc is not None:
-            score = eval(model, likelihood, test_batch=arc)
+            score = eval(model, likelihood, test_batch=arc).cpu().numpy()
             # score = eva.eval(arc)
             x.append(x_range[i, 0])
             y.append(y_range[i, 0])
@@ -71,20 +72,24 @@ def visul_2d(model, likelihood, X_train, data_type='BN', save_dir=None):
         # grid_scores.append(score)
         print(i)
     grid_inputs = grid_inputs.cpu().numpy()
-    grid_y = np.array(grid_scores).reshape((n, n))
-    save_object((grid_inputs, -grid_y), save_dir + "grid_X_y.dat")
-    save_object((x, y, grid_scores), save_dir + "scatter_points.dat")
+    grid_y = np.concatenate(grid_scores).reshape((n, n))
+    #save_object((grid_inputs, -grid_y), save_dir + "grid_X_y.dat")
+    #save_object((x, y, grid_scores), save_dir + "scatter_points.dat")
     if data_type == "BN":
         vmin, vmax = -15000, -11000
     else:
         vmin, vmax = 0.7, 0.76
-    ticks = np.linspace(vmin, vmax, 9, dtype=int).tolist()
+    #ticks = np.linspace(vmin, vmax, 9, dtype=int).tolist()
     cmap = plt.cm.get_cmap("viridis")
-    # f = plt.imshow(grid_y, cmap=cmap, interpolation='nearest')
-    sc = plt.scatter(x, y, c=grid_scores, cmap=cmap, vmin=vmin, vmax=vmax, s=10)
-    plt.colorbar(sc, ticks=ticks)
-    plt.savefig(save_dir + "2D_vis.pdf")
-
+    #f = plt.imshow(grid_y, cmap=cmap, interpolation='nearest')
+    print(len(grid_y))
+    y_scores = np.concatenate(grid_scores)
+    x_range, y_range = x_range.reshape((n, n)), y_range.reshape((n, n))
+    sc = plt.scatter(x_range, y_range, c=grid_y, cmap=cmap, vmin=y_scores.min(), vmax=y_scores.max(), s=5)
+    #ticks = np.linspace(y_scores.min(), y_scores.max(), 9, dtype=int).tolist()
+    plt.colorbar(sc)
+    plt.savefig(save_dir + "2D_vis.png")
+    plt.close()
 
 def normalize_data(y, mean, std):
     y = (y - mean) / std
@@ -167,7 +172,7 @@ class GPModel(ApproximateGP):
 def main():
     # set the seed
     # np.random.seed(1)
-    root_dir = "../dvae/checkpoints/svae_bayes_bidir/"
+    root_dir = "../dvae/checkpoints/high_lr/"
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(device)
     train_data, val_data, test_data = load_data(root_dir, device)
@@ -188,7 +193,7 @@ def main():
 
     test_rmses = []
     test_prs = []
-    data_type = "BN"  #'BN'NAS
+    data_type = "NAS"  #'BN'NAS
 
     for exp_no in range(10):
         idx_perm = torch.randperm(X_train.size(0))
@@ -283,7 +288,7 @@ def main():
         rmse = RMSELoss(means.to(device=device), y_test)
         print("Val | MAE: {}| pearsonr: {} | rmse: {}".format(mae, pearsonr, rmse))
         test_rmses.append(rmse)
-        visul_2d(best_model, best_likelihood, X_train, data_type='BN', save_dir=root_dir)
+        visul_2d(best_model, best_likelihood, X_train, data_type='BN', save_dir=root_dir+str(exp_no)+"_")
 
     test_rmses = np.array(test_rmses)
     test_prs = np.array(test_prs)

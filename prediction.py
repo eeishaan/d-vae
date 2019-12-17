@@ -19,9 +19,9 @@ from dvae.utils.dataloader import get_dataloaders
 
 # a = Namespace(**{"dataset_file": None, "mod": None, "bidirectional": True, "sgp": True})
 # model = Svae(a)
-model_dir = "dvae/checkpoints/svae_bayes_bidir/"
+model_dir = "dvae/checkpoints/high_lr/"
 model_name = glob.glob(model_dir + "*.ckpt")[0]
-model = Svae.load_from_checkpoint(model_name)
+model = Dvae.load_from_checkpoint(model_name)
 print(model_name)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -30,19 +30,19 @@ model.to(device=device)
 model.eval()
 model.freeze()
 
-dataset_file = os.path.join(DATA_DIR, "asia_200k.txt") #final_structures6
-train_loader, val_loader, test_loader = get_dataloaders(
-     BATCH_SIZE, dataset_file, fmt="str", task_type='bn'
-)
-#train_loader, val_loader, test_loader = get_dataloaders(BATCH_SIZE, dataset_file)
+dataset_file = os.path.join(DATA_DIR, "final_structures6.txt") #final_structures6
+#train_loader, val_loader, test_loader = get_dataloaders(
+#     BATCH_SIZE, dataset_file, fmt="str", task_type='enas'
+#)
+train_loader, val_loader, test_loader = get_dataloaders(BATCH_SIZE, dataset_file, task_type='enas')
 
 y_val = []
 latent_vectors = []
 for batch in val_loader[0]:
     true_acc = batch["acc"]
     batch = {k: v.to(device) for k, v in batch.items()}
-    #_, mu, logvar = model.encoder(batch)
-    mu, logvar = model.encoder(batch['graph'])
+    _, mu, logvar = model.encoder(batch)
+    #mu, logvar = model.encoder(batch['graph'])
     z = mu #model.reparamterize(mu, logvar)
     y_val.append(true_acc.detach().numpy())
     latent_vectors.append(z.detach().cpu().numpy())
@@ -58,8 +58,8 @@ latent_vectors = []
 for batch in train_loader:
     true_acc = batch["acc"]
     batch = {k: v.to(device) for k, v in batch.items()}
-    #_, mu, logvar = model.encoder(batch)
-    mu, logvar = model.encoder(batch['graph'])
+    _, mu, logvar = model.encoder(batch)
+    #mu, logvar = model.encoder(batch['graph'])
     z = mu #model.reparamterize(mu, logvar)
     y_train.append(true_acc.detach().numpy())
     latent_vectors.append(z.detach().cpu().numpy())
@@ -74,8 +74,8 @@ latent_vectors = []
 for batch in test_loader:
     true_acc = batch["acc"]
     batch = {k: v.to(device) for k, v in batch.items()}
-    #_, mu, logvar = model.encoder(batch)
-    mu, logvar = model.encoder(batch['graph'])
+    _, mu, logvar = model.encoder(batch)
+    #mu, logvar = model.encoder(batch['graph'])
     z = mu #model.reparamterize(mu, logvar)
     y_test.append(true_acc.detach().numpy())
     latent_vectors.append(z.detach().cpu().numpy())
