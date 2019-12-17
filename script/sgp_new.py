@@ -132,7 +132,7 @@ def main():
         # "Loss" for GPs - the marginal log likelihood
         mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
 
-        epochs = 500
+        epochs = 400
         best_epoch = 0
         best_mae = float("inf")
         best_model = None

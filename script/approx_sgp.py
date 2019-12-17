@@ -22,8 +22,7 @@ def normalize_data(y, mean, std):
     return y
 
 
-def load_data(device=None):
-    root_dir = "../dvae/checkpoints/dvae_enas_no_bidir/"
+def load_data(root_dir, device=None):
     y_train = np.concatenate(pickle.load(open(os.path.join(root_dir, "train_accs.pkl"), "rb")), axis=0)
 
     X_train = np.concatenate(
@@ -85,10 +84,10 @@ class GPModel(ApproximateGP):
 def main():
     # set the seed
     # np.random.seed(1)
-    root_dir = "../dvae/checkpoints/dvae_enas_no_bidir/"
+    root_dir = "../dvae/checkpoints/svae_high_lr/"
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(device)
-    train_data, val_data, test_data = load_data(device)
+    train_data, val_data, test_data = load_data(root_dir, device)
     X_train, y_train = train_data
     X_val, y_val = val_data
     X_test, y_test = test_data
@@ -126,7 +125,7 @@ def main():
         likelihood = gpytorch.likelihoods.GaussianLikelihood().to(device=device)
 
         # Use the adam optimizer
-        optimizer = torch.optim.Adam(model.parameters(), lr=5e-4)
+        optimizer = torch.optim.Adam(model.parameters(), lr=5e-2)
 
         # Our loss object. We're using the VariationalELBO, which essentially just computes the ELBO
         mll = gpytorch.mlls.VariationalELBO(
