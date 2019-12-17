@@ -15,6 +15,75 @@ from gpytorch.models import ApproximateGP
 from gpytorch.variational import CholeskyVariationalDistribution
 from gpytorch.variational import WhitenedVariationalStrategy
 from scipy import stats
+from sklearn.decomposition import PCA
+
+
+def visul_2d(model, likelihood, X_train, data_type='BN', save_dir=None):
+    print(
+        "Generating grid points from the 2-dim latent space to visualize smoothness w.r.t. score"
+    )
+    # random_inputs = torch.randn(y_test.shape[0], nz).cuda()
+    max_xy = 0.3
+    x_range = np.arange(-max_xy, max_xy, 0.005)
+    y_range = np.arange(max_xy, -max_xy, -0.005)
+    n = len(x_range)
+    x_range, y_range = np.meshgrid(x_range, y_range)
+    x_range, y_range = x_range.reshape((-1, 1)), y_range.reshape((-1, 1))
+
+    if True:  # select two principal components to visualize
+        pca = PCA(n_components=2, whiten=True)
+        pca.fit(X_train)
+        d1, d2 = pca.components_[0:1], pca.components_[1:2]
+        new_x_range = x_range * d1
+        new_y_range = y_range * d2
+        print("shape", x_range.shape, d1.shape)
+        grid_inputs = torch.FloatTensor(new_x_range + new_y_range).cuda()
+        print("grid_inputs", grid_inputs.shape)
+    else:
+        # grid_inputs = torch.FloatTensor(np.concatenate([x_range, y_range], 1)).cuda()
+        # if args.nz > 2:
+        #     grid_inputs = torch.cat(
+        #         [grid_inputs, z0[:, 2:].expand(grid_inputs.shape[0], -1)], 1
+        #     )
+
+    valid_arcs_grid = []
+    batch = 1000
+    for i in range(0, grid_inputs.shape[0], batch):
+        batch_grid_inputs = grid_inputs[i : i + batch, :]
+        valid_arcs_grid += batch_grid_inputs
+        # valid_arcs_grid += decode_from_latent_space(
+        #     batch_grid_inputs, model, 100, max_n, False, data_type
+        # )
+    print("Evaluating 2D grid points")
+    print("Total points: " + str(grid_inputs.shape[0]))
+    grid_scores = []
+    x, y = [], []
+    for i in range(len(valid_arcs_grid)):
+        arc = valid_arcs_grid[i]
+        if arc is not None:
+            score = eval(model, likelihood, test_batch=arc)
+            # score = eva.eval(arc)
+            x.append(x_range[i, 0])
+            y.append(y_range[i, 0])
+            grid_scores.append(score)
+        else:
+            score = 0
+        # grid_scores.append(score)
+        print(i)
+    grid_inputs = grid_inputs.cpu().numpy()
+    grid_y = np.array(grid_scores).reshape((n, n))
+    save_object((grid_inputs, -grid_y), save_dir + "grid_X_y.dat")
+    save_object((x, y, grid_scores), save_dir + "scatter_points.dat")
+    if data_type == "BN":
+        vmin, vmax = -15000, -11000
+    else:
+        vmin, vmax = 0.7, 0.76
+    ticks = np.linspace(vmin, vmax, 9, dtype=int).tolist()
+    cmap = plt.cm.get_cmap("viridis")
+    # f = plt.imshow(grid_y, cmap=cmap, interpolation='nearest')
+    sc = plt.scatter(x, y, c=grid_scores, cmap=cmap, vmin=vmin, vmax=vmax, s=10)
+    plt.colorbar(sc, ticks=ticks)
+    plt.savefig(save_dir + "2D_vis.pdf")
 
 
 def normalize_data(y, mean, std):
@@ -23,17 +92,27 @@ def normalize_data(y, mean, std):
 
 
 def load_data(root_dir, device=None):
-    y_train = np.concatenate(pickle.load(open(os.path.join(root_dir, "train_accs.pkl"), "rb")), axis=0)
+    y_train = np.concatenate(
+        pickle.load(open(os.path.join(root_dir, "train_accs.pkl"), "rb")), axis=0
+    )
 
     X_train = np.concatenate(
         pickle.load(open(os.path.join(root_dir, "train_latent_rep.pkl"), "rb")), axis=0
     )
 
-    y_val = np.concatenate(pickle.load(open(os.path.join(root_dir, "val_accs.pkl"), "rb")), axis=0)
-    X_val = np.concatenate(pickle.load(open(os.path.join(root_dir, "val_latent_rep.pkl"), "rb")), axis=0)
+    y_val = np.concatenate(
+        pickle.load(open(os.path.join(root_dir, "val_accs.pkl"), "rb")), axis=0
+    )
+    X_val = np.concatenate(
+        pickle.load(open(os.path.join(root_dir, "val_latent_rep.pkl"), "rb")), axis=0
+    )
 
-    y_test = np.concatenate(pickle.load(open(os.path.join(root_dir, "test_accs.pkl"), "rb")), axis=0)
-    X_test = np.concatenate(pickle.load(open(os.path.join(root_dir, "test_latent_rep.pkl"), "rb")), axis=0)
+    y_test = np.concatenate(
+        pickle.load(open(os.path.join(root_dir, "test_accs.pkl"), "rb")), axis=0
+    )
+    X_test = np.concatenate(
+        pickle.load(open(os.path.join(root_dir, "test_latent_rep.pkl"), "rb")), axis=0
+    )
 
     X_train = torch.from_numpy(X_train).to(device)
     y_train = torch.from_numpy(y_train).to(device).to(dtype=torch.float)
@@ -48,14 +127,18 @@ def RMSELoss(y_hat, y):
     return torch.sqrt(torch.mean((y_hat - y) ** 2)).item()
 
 
-def eval(model, likelihood, test_loader, split="val"):
+def eval(model, likelihood, test_loader=None, test_batch=None):
     model.eval()
     likelihood.eval()
     means = torch.tensor([0.0])
     with torch.no_grad():
-        for x_batch, y_batch in test_loader:
-            preds = model(x_batch)
+        if test_loader is None:
+            preds = model(test_batch)
             means = torch.cat([means, preds.mean.cpu()])
+        else:
+            for x_batch, y_batch in test_loader:
+                preds = model(x_batch)
+                means = torch.cat([means, preds.mean.cpu()])
     means = means[1:]
     return means
 
@@ -105,7 +188,7 @@ def main():
 
     test_rmses = []
     test_prs = []
-    data_type = "NAS"  #'BN'
+    data_type = "BN"  #'BN'NAS
 
     for exp_no in range(10):
         idx_perm = torch.randperm(X_train.size(0))
@@ -171,7 +254,7 @@ def main():
 
             # torch.cuda.empty_cache()
             print("Iter %d/%d - Loss: %.3f" % (i + 1, epochs, total_loss))
-            means = eval(model, likelihood, val_loader, split="val")
+            means = eval(model, likelihood, test_loader=val_loader)
             mae = torch.mean(torch.abs(means.to(device=device) - y_val))
             pearsonr = stats.pearsonr(means.cpu().numpy(), y_val.cpu().numpy())[0]
             rmse = RMSELoss(means.to(device=device), y_val)
@@ -182,7 +265,7 @@ def main():
                 best_likelihood = likelihood
 
         # val
-        means = eval(best_model, best_likelihood, val_loader, split="val")
+        means = eval(best_model, best_likelihood, test_loader=val_loader)
         mae = torch.mean(torch.abs(means.to(device=device) - y_val))
         pearsonr = stats.pearsonr(means.cpu().numpy(), y_val.cpu().numpy())[0]
         rmse = RMSELoss(means.to(device=device), y_val)
@@ -192,7 +275,7 @@ def main():
             )
         )
         # test
-        means = eval(best_model, best_likelihood, test_loader, split="test")
+        means = eval(best_model, best_likelihood, test_loader=test_loader)
         mae = torch.mean(torch.abs(means.to(device=device) - y_test))
         pearsonr = stats.pearsonr(means.cpu().numpy(), y_test.cpu().numpy())[0]
         if not math.isnan(pearsonr):
@@ -200,12 +283,15 @@ def main():
         rmse = RMSELoss(means.to(device=device), y_test)
         print("Val | MAE: {}| pearsonr: {} | rmse: {}".format(mae, pearsonr, rmse))
         test_rmses.append(rmse)
-        
+        visul_2d(best_model, best_likelihood, X_train, data_type='BN', save_dir=root_dir)
+
     test_rmses = np.array(test_rmses)
     test_prs = np.array(test_prs)
     print("Test: RMSE | Mean: {} | Std: {}".format(test_rmses.mean(), test_rmses.std()))
     print("Test: Pearsonr | Mean: {} | Std: {}".format(test_prs.mean(), test_prs.std()))
     print(root_dir)
+    
+
 
 if __name__ == "__main__":
     main()
