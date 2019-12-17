@@ -19,7 +19,7 @@ from dvae.utils.dataloader import get_dataloaders
 
 # a = Namespace(**{"dataset_file": None, "mod": None, "bidirectional": True, "sgp": True})
 # model = Svae(a)
-model_dir = "dvae/checkpoints/svae_bayes_no_bidir/"
+model_dir = "dvae/checkpoints/svae_bayes_bidir/"
 model_name = glob.glob(model_dir + "*.ckpt")[0]
 model = Svae.load_from_checkpoint(model_name)
 print(model_name)

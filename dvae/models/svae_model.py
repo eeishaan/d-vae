@@ -15,7 +15,7 @@ class Encoder(nn.Module):
         self, node_type=8, max_seq_len=8, hidden_size=501, latent_dim=56, bidir=False
     ):
         super(Encoder, self).__init__()
-        self.bidir = False
+        self.bidir = bidir
         self.node_type = node_type
         self.hidden_size = hidden_size
         self.latent_dim = latent_dim
@@ -99,7 +99,7 @@ class Svae(pl.LightningModule):
             pass
         self.node_type = getattr(hparams, "num_classes", 8)
         self.max_seq_len = getattr(hparams, "max_seq", 8)
-        self.bidir = False#self.hparams.bidirectional
+        self.bidir = self.hparams.bidirectional
 
         self.encoder = Encoder(self.node_type, self.max_seq_len, bidir=self.bidir)
         self.decoder = Decoder(self.node_type, self.max_seq_len)
